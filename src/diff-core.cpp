@@ -2,42 +2,474 @@
 
 namespace Diff
 {
-    void text_file_populate_line_starts(Arena::Arena* arena, TextFile* result)
+    namespace
     {
-        // Let's start with a simple linked list of these line starts that we can then
-        // flatten into an array.
-        auto scratch = Arena::scratch_begin({ &arena, 1 });
-        struct StartNode
+        struct SnakePoint
         {
-            StartNode* next;
-            Editor::CharOffset start;
+            OffT x;
+            OffT y;
         };
-        StartNode* first = nullptr;
-        StartNode* last = nullptr;
-        uint64_t count = 0;
 
-        for EachIndex(i, result->content.size)
+        struct DiffBox
         {
-            if (result->content.str[i] == '\n')
+            OffT left;
+            OffT top;
+            OffT right;
+            OffT bottom;
+        };
+
+        struct DiffInput
+        {
+            const TextFile* a;
+            const TextFile* b;
+            bool (*cmp)(const DiffInput*, OffT a_idx, OffT b_idx);
+        };
+
+        void text_file_populate_line_starts(Arena::Arena* arena, TextFile* result)
+        {
+            // Let's start with a simple linked list of these line starts that we can then
+            // flatten into an array.
+            auto scratch = Arena::scratch_begin({ &arena, 1 });
+            struct StartNode
             {
-                StartNode* n = Arena::push_array<StartNode>(scratch.arena, 1);
-                n->start = Editor::CharOffset{ i + 1 };
-                SLLQueuePush(first, last, n);
-                ++count;
+                StartNode* next;
+                Editor::CharOffset start;
+            };
+            StartNode* first = nullptr;
+            StartNode* last = nullptr;
+            uint64_t count = 0;
+
+            for EachIndex(i, result->content.size)
+            {
+                if (result->content.str[i] == '\n')
+                {
+                    StartNode* n = Arena::push_array<StartNode>(scratch.arena, 1);
+                    n->start = Editor::CharOffset{ i + 1 };
+                    SLLQueuePush(first, last, n);
+                    ++count;
+                }
+            }
+            // Flatten.
+            result->line_starts.size = count + 1;
+            result->line_starts.array = Arena::push_array_no_zero<Editor::CharOffset>(arena, result->line_starts.size);
+            // First line.
+            result->line_starts.array[0] = Editor::CharOffset{};
+            uint64_t idx = 1;
+            for EachNode(n, first)
+            {
+                result->line_starts.array[idx++] = n->start;
+            }
+            Arena::scratch_end(scratch);
+        }
+
+        Edit make_edit(EditType type, OffT idx_a, OffT idx_b)
+        {
+            Edit edit = {
+                .idx_a = idx_a,
+                .idx_b = idx_b,
+                .type = type,
+            };
+            return edit;
+        }
+
+        DiffBox make_box(OffT left, OffT top, OffT right, OffT bottom)
+        {
+            DiffBox box = {
+                .left = left,
+                .top = top,
+                .right = right,
+                .bottom = bottom
+            };
+            return box;
+        }
+
+        bool same_line(const DiffInput* input, OffT line_a, OffT line_b)
+        {
+            Editor::CursorLine l_a = Editor::CursorLine(line_a);
+            Editor::CursorLine l_b = Editor::CursorLine(line_b);
+            String8 ltxt_a = text_file_line_text(*input->a, l_a);
+            String8 ltxt_b = text_file_line_text(*input->b, l_b);
+            return str8_match_exact(ltxt_a, ltxt_b);
+        }
+
+        bool same_text(const DiffInput* input, OffT a_index, OffT b_index)
+        {
+            return input->a->content.str[a_index] == input->b->content.str[b_index];
+        }
+
+        void push_edit(Arena::Arena* arena, EditList* lst, Edit edit)
+        {
+            EditNode* node = Arena::push_array<EditNode>(arena, 1);
+            node->edit = edit;
+            SLLQueuePush(lst->first, lst->last, node);
+            ++lst->count;
+        }
+
+        void push_equal(Arena::Arena* arena, EditList* lst, OffT idx_a, OffT idx_b)
+        {
+            Edit e = {
+                .idx_a = idx_a,
+                .idx_b = idx_b,
+                .type = EditType::Eq,
+            };
+            push_edit(arena, lst, e);
+        }
+
+        void push_delete(Arena::Arena* arena, EditList* lst, OffT idx_a)
+        {
+            Edit e = {
+                .idx_a = idx_a,
+                .idx_b = diff_idx_sentinel,
+                .type = EditType::Del,
+            };
+            push_edit(arena, lst, e);
+        }
+
+        void push_insert(Arena::Arena* arena, EditList* lst, OffT idx_b)
+        {
+            Edit e = {
+                .idx_a = diff_idx_sentinel,
+                .idx_b = idx_b,
+                .type = EditType::Ins,
+            };
+            push_edit(arena, lst, e);
+        }
+
+        struct DiagArea
+        {
+            OffT* buf;
+            uint64_t size;
+        };
+
+        DiagArea make_diagonal_area(Arena::Arena* arena, uint64_t size)
+        {
+            DiagArea result = {};
+            result.size = size;
+            result.buf = Arena::push_array_no_zero<OffT>(arena, result.size);
+            return result;
+        }
+
+        struct FindMiddleSnakeResult
+        {
+            SnakePoint start;
+            SnakePoint end;
+            bool found;
+        };
+
+        FindMiddleSnakeResult find_middle_snake(const DiffInput* input, DiffBox box)
+        {
+            FindMiddleSnakeResult result = {};
+            OffT width = box.right - box.left;
+            OffT height = box.bottom - box.top;
+            OffT box_size = width + height;
+
+            // An early out if our box size is not computable.
+            if (box_size == 0)
+                return result;
+
+            auto scratch = Arena::scratch_begin(Arena::no_conflicts);
+            OffT max_depth = (box_size + 1) / 2;
+            OffT delta = width - height;
+            bool odd_delta = (delta & 1) != 0;
+
+            OffT diagonal_limit = max_depth + 1;
+            OffT area_size = diagonal_limit * 2 + 1;
+            OffT diagonal_offset = diagonal_limit;
+
+            DiagArea forward = make_diagonal_area(scratch.arena, area_size);
+            DiagArea backward = make_diagonal_area(scratch.arena, area_size);
+
+            // Note: due to the way the algorithm below walks the diagonals, we don't actually
+            // need to initialize the actual buffers of forward and backward above.  An uninitialized
+            // access never happens because we fill each box from the inside out so each successive
+            // box as distance grows will always have a valid inner box to index into.
+
+            // Here's a helpful graphic of the boxes being built for the sample code:
+            // // a.c
+            //
+            // size_t Chunk_copy(Chunk *src, size_t src_start, Chunk *dst, size_t dst_start, size_t n)
+            // {
+            //     if (!Chunk_bounds_check(src, src_start, n)) return 0;
+            //     if (!Chunk_bounds_check(dst, dst_start, n)) return 0;
+            // 
+            //     memcpy(dst->data + dst_start, src->data + src_start, n);
+            // 
+            //     return n;
+            // }
+            //
+            // int Chunk_bounds_check(Chunk *chunk, size_t start, size_t n)
+            // {
+            //     if (chunk == NULL) return 0;
+            //
+            //     size_t length = chunk->length;
+            //
+            //     return start <= length && n <= length - start;
+            // }
+            // -----
+            // // b.c
+            // 
+            // int Chunk_bounds_check(Chunk *chunk, size_t start, size_t n)
+            // {
+            //     if (chunk == NULL) return 0;
+            // 
+            //     size_t length = chunk->length;
+            // 
+            //     return start <= length && n <= length - start;
+            // }
+            //
+            // size_t Chunk_copy(Chunk *src, size_t src_start, Chunk *dst, size_t dst_start, size_t n)
+            // {
+            //     if (!Chunk_bounds_check(src, src_start, n)) return 0;
+            //     if (!Chunk_bounds_check(dst, dst_start, n)) return 0;
+            // 
+            //     memcpy(dst->data + dst_start, src->data + src_start, n);
+            // 
+            //     return n;
+            // }
+            // -----
+            //     0   1   2   3   4   5   6   7   8   9  10  11  12  13  14  15  16  17  18
+            //  0  o---o---o---o---o
+            //     |   |   |   |   |
+            //  1  o---o---o---o---o
+            //     |   | \ |   |   |
+            //  2  o---o---o---o---o
+            //                     |
+            //  3                  @
+            //                       \
+            //  4                      o---o---o---o
+            //                         |   |   |   |
+            //  5                      o---o---o---o
+            //                         |   | \ |   |
+            //  6                      o---o---o---o
+            //                         |   |   |   |
+            //  7                      o---o---o---o
+            //                                       \
+            //  8                                      @
+            //                                           \
+            //  9                                          @---o---o---o
+            //                                                 |   |   |
+            // 10                                              o---o---o
+            //                                                 | \ |   |
+            // 11                                              o---o---o
+            //                                                 |   |   |
+            // 12                                              o---o---o
+            //                                                 |   |   |
+            // 13                                              o---o---o
+            //                                                           \
+            // 14                                                          @---o---o---o---o
+            //                                                                 |   |   |   |
+            // 15                                                              o---o---o---o
+            //                                                                 | \ |   |   |
+            // 16                                                              o---o---o---o
+            //                                                                 |   |   |   |
+            // 17                                                              o---o---o---o
+            //                                                                 |   |   | \ |
+            // 18                                                              o---o---o---o
+
+            // Because we're searching an area over 'k' and 'c' and these will include negative numbers, we
+            // split our buffer in half and start indexing into that so we can go backwards.  Since the area
+            // buffer is 'size * 2' this gives us all the space we need for the search.
+            OffT* forward_buf = forward.buf + diagonal_offset;
+            OffT* backward_buf = backward.buf + diagonal_offset;
+
+            // Set the intial search conditions.
+            forward_buf[1] = box.left;
+            backward_buf[1] = box.bottom;
+
+            for (OffT distance = 0; distance <= max_depth; ++distance)
+            {
+                // Forward search.
+                for (OffT k = distance; k >= -distance; k -= 2)
+                {
+                    OffT previous_x;
+                    OffT x;
+                    if (k == -distance or (k != distance and forward_buf[k - 1] < forward_buf[k + 1]))
+                    {
+                        previous_x = forward_buf[k + 1];
+                        x = previous_x;
+                    }
+                    else
+                    {
+                        previous_x = forward_buf[k - 1];
+                        x = previous_x + 1;
+                    }
+
+                    OffT y = box.top + (x - box.left) - k;
+                    OffT previous_y = (distance == 0 or x != previous_x) ? y : (y - 1);
+
+                    // Eat common prefix.
+                    while (x < box.right and y < box.bottom and input->cmp(input, x, y))
+                    {
+                        ++x;
+                        ++y;
+                    }
+
+                    forward_buf[k] = x;
+
+                    OffT reverse_diag = k - delta;
+                    if (odd_delta and reverse_diag >= -(distance - 1) and reverse_diag <= (distance - 1) and y >= backward_buf[reverse_diag])
+                    {
+                        result.start.x = previous_x;
+                        result.start.y = previous_y;
+                        result.end.x = x;
+                        result.end.y = y;
+                        result.found = true;
+                        break;
+                    }
+                }
+
+                // If the forward search found a result, we are done.
+                if (result.found)
+                    break;
+
+                // Backward search.
+                for (OffT reverse_diag = distance; reverse_diag >= -distance; reverse_diag -= 2)
+                {
+                    OffT k = reverse_diag + delta;
+                    OffT previous_y;
+                    OffT y;
+                    if (reverse_diag == -distance or (reverse_diag != distance and backward_buf[reverse_diag - 1] > backward_buf[reverse_diag + 1]))
+                    {
+                        previous_y = backward_buf[reverse_diag + 1];
+                        y = previous_y;
+                    }
+                    else
+                    {
+                        previous_y = backward_buf[reverse_diag - 1];
+                        y = previous_y - 1;
+                    }
+
+                    OffT x = box.left + (y - box.top) + k;
+                    OffT previous_x = (distance == 0 or y != previous_y) ? x : (x + 1);
+
+                    // Eat common suffix.
+                    while (x > box.left and y > box.top and input->cmp(input, x - 1, y - 1))
+                    {
+                        --x;
+                        --y;
+                    }
+
+                    backward_buf[reverse_diag] = y;
+
+                    if (not odd_delta and k >= -distance and k <= distance and x <= forward_buf[k])
+                    {
+                        result.start.x = x;
+                        result.start.y = y;
+                        result.end.x = previous_x;
+                        result.end.y = previous_y;
+                        result.found = true;
+                        break;
+                    }
+                }
+
+                // If the backward search found a result, we are done.
+                if (result.found)
+                    break;
+            }
+
+            Arena::scratch_end(scratch);
+            return result;
+        }
+
+        void record_middle_snakes(Arena::Arena* arena,
+                                    const DiffInput* input,
+                                    FindMiddleSnakeResult find_r,
+                                    EditList* lst)
+        {
+            OffT x = find_r.start.x;
+            OffT y = find_r.start.y;
+
+            // Add common prefixes.
+            while (x < find_r.end.x
+                    and y < find_r.end.y
+                    and input->cmp(input, x, y))
+            {
+                push_equal(arena, lst, x, y);
+                ++x;
+                ++y;
+            }
+
+            OffT remaining_x = find_r.end.x - x;
+            OffT remaining_y = find_r.end.y - y;
+            // x > y implies delete from A.
+            if (remaining_x > remaining_y)
+            {
+                push_delete(arena, lst, x);
+                ++x;
+            }
+            // y > x implies insertion from B.
+            else if (remaining_y > remaining_x)
+            {
+                push_insert(arena, lst, y);
+                ++y;
+            }
+
+            // Clean up any remaining common suffix.
+            while (x < find_r.end.x
+                    and y < find_r.end.y
+                    and input->cmp(input, x, y))
+            {
+                push_equal(arena, lst, x, y);
+                ++x;
+                ++y;
+            }
+
+            // The entire sequence should have been consumed.
+            assert(x == find_r.end.x and y == find_r.end.y);
+        }
+
+        void unified_diff_box(Arena::Arena* arena, const DiffInput* input, DiffBox box, EditList* lst)
+        {
+            // Add common prefixes up front.
+            while (box.left < box.right and box.top < box.bottom and input->cmp(input, box.left, box.top))
+            {
+                push_equal(arena, lst, box.left, box.top);
+                ++box.left;
+                ++box.top;
+            }
+
+            OffT suffix_length = 0;
+            // Rewind the box to the nearest uncommon suffix, but we can't record them yet otherwise
+            // the final edit list will be in the wrong order.
+            while (box.left < box.right and box.top < box.bottom and input->cmp(input, box.right - 1, box.bottom - 1))
+            {
+                --box.right;
+                --box.bottom;
+                ++suffix_length;
+            }
+
+            OffT width = box.right - box.left;
+            OffT height = box.bottom - box.top;
+
+            FindMiddleSnakeResult middle_snake = find_middle_snake(input, box);
+            if (not middle_snake.found)
+            {
+                assert((width + height) == 0);
+                return;
+            }
+
+            // If the middle snake encloses the entire sub-box we're looking at, we can emit the snake
+            // without any further recursive calls.
+            if (middle_snake.start.x     == box.left
+                and middle_snake.start.y == box.top
+                and middle_snake.end.x   == box.right
+                and middle_snake.end.y   == box.bottom)
+            {
+                record_middle_snakes(arena, input, middle_snake, lst);
+            }
+            else
+            {
+                unified_diff_box(arena, input, make_box(box.left, box.top, middle_snake.start.x, middle_snake.start.y), lst);
+                record_middle_snakes(arena, input, middle_snake, lst);
+                unified_diff_box(arena, input, make_box(middle_snake.end.x, middle_snake.end.y, box.right, box.bottom), lst);
+            }
+
+            for (OffT i = 0; i < suffix_length; ++i)
+            {
+                push_equal(arena, lst, box.right + i, box.bottom + i);
             }
         }
-        // Flatten.
-        result->line_starts.size = count + 1;
-        result->line_starts.array = Arena::push_array_no_zero<Editor::CharOffset>(arena, result->line_starts.size);
-        // First line.
-        result->line_starts.array[0] = Editor::CharOffset{};
-        uint64_t idx = 1;
-        for EachNode(n, first)
-        {
-            result->line_starts.array[idx++] = n->start;
-        }
-        Arena::scratch_end(scratch);
-    }
+    } // namespace [anon]
 
     TextFile text_file_read(Arena::Arena* arena, String8 path)
     {
@@ -115,6 +547,16 @@ namespace Diff
         result.line_starts.size = file.line_starts.size;
         result.line_starts.array = Arena::push_array_no_zero<Editor::CharOffset>(arena, result.line_starts.size);
         memcpy(result.line_starts.array, file.line_starts.array, result.line_starts.size * sizeof(Editor::CharOffset));
+        return result;
+    }
+
+    // Diffing.
+    // Note: This is the linear space variant of the Myers diff algorithm.
+    EditList diff_file_lines(Arena::Arena* arena, const TextFile& a, const TextFile& b)
+    {
+        EditList result = {};
+        DiffInput input = { &a, &b, same_line };
+        unified_diff_box(arena, &input, make_box(0, 0, OffT(a.line_starts.size), OffT(b.line_starts.size)), &result);
         return result;
     }
 } // namespace Diff
