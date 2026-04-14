@@ -126,9 +126,220 @@ namespace Diff
         return node;
     }
 
+    MergedTextNode* push_merged_text(Arena::Arena* arena, MergedTextList* lst, MergedText merged)
+    {
+        MergedTextNode* node = Arena::push_array<MergedTextNode>(arena, 1);
+        node->merged = merged;
+        SLLQueuePush(lst->first, lst->last, node);
+        ++lst->count;
+        return node;
+    }
+
+    struct OffsetVisualLine
+    {
+        Editor::CharOffset first;
+        uint64_t v_line;
+    };
+
+    struct OffsetVisualLineMap
+    {
+        OffsetVisualLine* array;
+        uint64_t size;
+    };
+
+    uint64_t v_line_for_offset(OffsetVisualLineMap* map, Editor::CharOffset off)
+    {
+        if (map->size == 0)
+            return 0;
+        uint64_t low = 0;
+        uint64_t high = map->size - 1;
+        uint64_t mid = 0;
+        while (low <= high)
+        {
+            mid = low + ((high - low) / 2);
+            if (mid == high)
+                break;
+            Editor::CharOffset mid_start = map->array[mid].first;
+            Editor::CharOffset mid_stop = map->array[mid + 1].first;
+            if (off < mid_start)
+            {
+                high = mid - 1;
+            }
+            else if (off >= mid_stop)
+            {
+                low = mid + 1;
+            }
+            else
+            {
+                break;
+            }
+        }
+        return map->array[mid].v_line;
+    }
+
+    struct BuildMergedListInput
+    {
+        Arena::Arena* merge_arena;
+        MergedLineList A;
+        MergedLineList B;
+        const TextFile* file_A;
+        const TextFile* file_B;
+        MergedTextList* merged_A;
+        MergedTextList* merged_B;
+    };
+
+    void populate_merged_text_list(Arena::Arena* arena, const BuildMergedListInput& in)
+    {
+        if (in.A.count == 0)
+            return;
+        if (in.B.count == 0)
+            return;
+        // Create a list of edits between these.
+        // To do this, we need to know the number of total char offsets we're dealing with.  This number is
+        // equivalent to the number of offsets in each line of each list.  Let's compute that here and then
+        // Create the arrays we will populate after.
+        DiffBlockInput block_a = {};
+        DiffBlockInput block_b = {};
+        // These are used to map offsets back to the visual lines in the diff.
+        OffsetVisualLineMap off_map_a = {};
+        OffsetVisualLineMap off_map_b = {};
+        // Count A.
+        for EachNode(n, in.A.first)
+        {
+            block_a.block.size += rep(distance(n->line.first, n->line.last));
+        }
+        // Count B.
+        for EachNode(n, in.B.first)
+        {
+            block_b.block.size += rep(distance(n->line.first, n->line.last));
+        }
+        // Allocate.
+        block_a.block.underlying_off = Arena::push_array_no_zero<Editor::CharOffset>(arena, block_a.block.size);
+        block_b.block.underlying_off = Arena::push_array_no_zero<Editor::CharOffset>(arena, block_b.block.size);
+        off_map_a.size = in.A.count;
+        off_map_b.size = in.B.count;
+        off_map_a.array = Arena::push_array_no_zero<OffsetVisualLine>(arena, off_map_a.size);
+        off_map_b.array = Arena::push_array_no_zero<OffsetVisualLine>(arena, off_map_b.size);
+        // Populate.
+        uint64_t idx = 0;
+        uint64_t idx_map = 0;
+        for EachNode(n, in.A.first)
+        {
+            for (Editor::CharOffset off = n->line.first; off < n->line.last; off = extend(off))
+            {
+                block_a.block.underlying_off[idx++] = off;
+            }
+            off_map_a.array[idx_map].first = n->line.first;
+            off_map_a.array[idx_map++].v_line = n->line.v_line;
+        }
+        idx = 0;
+        idx_map = 0;
+        for EachNode(n, in.B.first)
+        {
+            for (Editor::CharOffset off = n->line.first; off < n->line.last; off = extend(off))
+            {
+                block_b.block.underlying_off[idx++] = off;
+            }
+            off_map_b.array[idx_map].first = n->line.first;
+            off_map_b.array[idx_map++].v_line = n->line.v_line;
+        }
+        block_a.file = in.file_A;
+        block_b.file = in.file_B;
+        EditList edits = diff_file_block(arena, block_a, block_b);
+        // Now our strategy is to iterate this list and create a series of fine-grained edits in each block.
+        MergedText current = { .type = EditType::Invalid };
+        for EachNode(e, edits.first)
+        {
+            switch (e->edit.type)
+            {
+            case EditType::Del:
+                // Create if invalid.
+                if (current.type == EditType::Invalid)
+                {
+                    current.type = e->edit.type;
+                    current.first = current.last = block_a.block.underlying_off[e->edit.idx_a];
+                    current.v_line = v_line_for_offset(&off_map_a, current.first);
+                }
+
+                // Commit the current.
+                if (current.type != e->edit.type)
+                {
+                    // Note: We only merge insertions and deletions so this list will always
+                    // commit to B.
+                    push_merged_text(in.merge_arena, in.merged_B, current);
+                    current.type = e->edit.type;
+                    current.first = current.last = block_a.block.underlying_off[e->edit.idx_a];
+                    current.v_line = v_line_for_offset(&off_map_a, current.first);
+                }
+
+                // Test if we have advanced to the next line or skipped a chunk.
+                if (current.last != block_a.block.underlying_off[e->edit.idx_a])
+                {
+                    // Commit it.
+                    push_merged_text(in.merge_arena, in.merged_A, current);
+                    current.type = e->edit.type;
+                    current.first = current.last = block_a.block.underlying_off[e->edit.idx_a];
+                    current.v_line = v_line_for_offset(&off_map_a, current.first);
+                }
+                current.last = extend(current.last);
+                break;
+            case EditType::Ins:
+                // Create if invalid.
+                if (current.type == EditType::Invalid)
+                {
+                    current.type = e->edit.type;
+                    current.first = current.last = block_b.block.underlying_off[e->edit.idx_b];
+                    current.v_line = v_line_for_offset(&off_map_b, current.first);
+                }
+
+                // Commit the current.
+                if (current.type != e->edit.type)
+                {
+                    // Note: We only merge insertions and deletions so this list will always
+                    // commit to A.
+                    push_merged_text(in.merge_arena, in.merged_A, current);
+                    current.type = e->edit.type;
+                    current.first = current.last = block_b.block.underlying_off[e->edit.idx_b];
+                    current.v_line = v_line_for_offset(&off_map_b, current.first);
+                }
+
+                // Test if we have advanced to the next line or skipped a chunk.
+                if (current.last != block_b.block.underlying_off[e->edit.idx_b])
+                {
+                    // Commit it.
+                    push_merged_text(in.merge_arena, in.merged_B, current);
+                    current.type = e->edit.type;
+                    current.first = current.last = block_b.block.underlying_off[e->edit.idx_b];
+                    current.v_line = v_line_for_offset(&off_map_b, current.first);
+                }
+                current.last = extend(current.last);
+                break;
+            case EditType::Eq:
+                break;
+            case EditType::Invalid:
+                break;
+            }
+        }
+        // Commit the final.
+        if (current.type != EditType::Invalid)
+        {
+            if (current.type == EditType::Del)
+            {
+                push_merged_text(in.merge_arena, in.merged_A, current);
+            }
+            else
+            {
+                assert(current.type == EditType::Ins);
+                push_merged_text(in.merge_arena, in.merged_B, current);
+            }
+        }
+    }
+
     void apply_diff(DiffPanel* panel)
     {
         auto scratch = Arena::scratch_begin(Arena::no_conflicts);
+        // This is so that we can avoid possible chaining of scratch above.
+        auto scratch2 = Arena::scratch_begin({ &scratch.arena, 1 });
         TextFile* a = text_file(panel->A.view);
         TextFile* b = text_file(panel->B.view);
         EditList edits = diff_file_lines(scratch.arena, *a, *b);
@@ -139,6 +350,16 @@ namespace Diff
         MergedLineList lst_A = {};
         MergedLineList lst_B = {};
         MergedLineList lst_merge_B = {}; // This is to have as a write-back for the B list.
+        // These serve as candidate lists for us to, potentially, perform a sub-diff against
+        // the respective blocks for better letter-highlighting.
+        MergedTextList merged_txt_A = {};
+        MergedTextList merged_txt_B = {};
+        BuildMergedListInput merged_lst_input = {};
+        merged_lst_input.file_A = a;
+        merged_lst_input.file_B = b;
+        merged_lst_input.merge_arena = scratch.arena;
+        merged_lst_input.merged_A = &merged_txt_A;
+        merged_lst_input.merged_B = &merged_txt_B;
         for EachNode(e, edits.first)
         {
             switch (e->edit.type)
@@ -150,15 +371,19 @@ namespace Diff
                     MergedLine line_a = {
                         .first = rng_a.first,
                         .last = rng_a.last,
+                        .v_line = lst_A.count,
                         .type = EditType::Del,
                     };
                     push_merge_line(scratch.arena, &lst_A, line_a);
                     MergedLine line_b = {
                         .first = Editor::CharOffset::Sentinel,
                         .last = Editor::CharOffset::Sentinel,
+                        .v_line = lst_B.count,
                         .type = EditType::Invalid,
                     };
                     push_merge_line(scratch.arena, &lst_merge_B, line_b);
+                    // Now we add the A candidate.
+                    push_merge_line(scratch2.arena, &merged_lst_input.A, line_a);
                 }
                 break;
             case EditType::Ins:
@@ -168,6 +393,7 @@ namespace Diff
                     MergedLine line_b = {
                         .first = rng_b.first,
                         .last = rng_b.last,
+                        .v_line = lst_B.count,
                         .type = EditType::Ins,
                     };
                     // Try to pull from the merged list.  If we have one, we don't need to add
@@ -179,6 +405,7 @@ namespace Diff
                         MergedLine line_a = {
                             .first = Editor::CharOffset::Sentinel,
                             .last = Editor::CharOffset::Sentinel,
+                            .v_line = lst_A.count,
                             .type = EditType::Invalid,
                         };
                         push_merge_line(scratch.arena, &lst_A, line_a);
@@ -193,6 +420,8 @@ namespace Diff
                         SLLQueuePush(lst_B.first, lst_B.last, node);
                         ++lst_B.count;
                     }
+                    // Add the B candidate.
+                    push_merge_line(scratch2.arena, &merged_lst_input.B, line_b);
                 }
                 break;
             case EditType::Eq:
@@ -206,6 +435,7 @@ namespace Diff
                         MergedLine line_b = {
                             .first = Editor::CharOffset::Sentinel,
                             .last = Editor::CharOffset::Sentinel,
+                            .v_line = lst_B.count,
                             .type = EditType::Invalid,
                         };
                         // Insert B.
@@ -225,25 +455,38 @@ namespace Diff
                     MergedLine line_a = {
                         .first = rng_a.first,
                         .last = rng_a.last,
+                        .v_line = lst_A.count,
                         .type = EditType::Eq,
                     };
                     MergedLine line_b = {
                         .first = rng_b.first,
                         .last = rng_b.last,
+                        .v_line = lst_B.count,
                         .type = EditType::Eq,
                     };
                     push_merge_line(scratch.arena, &lst_A, line_a);
                     push_merge_line(scratch.arena, &lst_B, line_b);
                     assert(lst_A.count == lst_B.count);
+                    // Try to pull candidates and create a merge block.
+                    populate_merged_text_list(scratch2.arena, merged_lst_input);
+                    merged_lst_input.A = {};
+                    merged_lst_input.B = {};
+                    // Clear the temporary arena as well.
+                    Arena::pop_to(scratch2.arena, scratch2.pos);
                 }
                 break;
             case EditType::Invalid:
                 break;
             }
         }
+        // Perform one final populate just in case the files were completely different.
+        populate_merged_text_list(scratch2.arena, merged_lst_input);
 
-        populate_diff(panel->A.view, lst_A);
-        populate_diff(panel->B.view, lst_B);
+        populate_line_diff(panel->A.view, lst_A);
+        populate_line_diff(panel->B.view, lst_B);
+        populate_text_blocks_diff(panel->A.view, merged_txt_A);
+        populate_text_blocks_diff(panel->B.view, merged_txt_B);
+        Arena::scratch_end(scratch2);
         Arena::scratch_end(scratch);
     }
 

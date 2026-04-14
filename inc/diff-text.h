@@ -11,6 +11,7 @@ namespace Diff
     {
         Editor::CharOffset first; // First == sentinel implies gap line.
         Editor::CharOffset last;
+        uint64_t v_line; // The visual line into the merged buffer.
         EditType type;
     };
 
@@ -33,6 +34,34 @@ namespace Diff
         uint64_t size;
     };
 
+    struct MergedText
+    {
+        Editor::CharOffset first;
+        Editor::CharOffset last;
+        uint64_t v_line; // The visual line into the merged buffer.
+        Editor::CursorLine line; // Line for actual text.
+        EditType type;
+    };
+
+    struct MergedTextNode
+    {
+        MergedTextNode* next;
+        MergedText merged;
+    };
+
+    struct MergedTextList
+    {
+        MergedTextNode* first;
+        MergedTextNode* last;
+        uint64_t count;
+    };
+
+    struct MergedTextBlocks
+    {
+        MergedText* blocks;
+        uint64_t size;
+    };
+
     struct DiffTextViewResponse
     {
         bool scroll_changed;
@@ -48,7 +77,8 @@ namespace Diff
 
     // Interaction.
     void populate_text(DiffTextView* widget, const TextFile& text);
-    void populate_diff(DiffTextView* widget, MergedLineList lst);
+    void populate_line_diff(DiffTextView* widget, MergedLineList lst);
+    void populate_text_blocks_diff(DiffTextView* widget, MergedTextList lst);
     void share_scroll_pos(DiffTextView* widget, const DiffTextView* share_from);
 
     // Queries.

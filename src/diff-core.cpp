@@ -18,12 +18,27 @@ namespace Diff
             OffT bottom;
         };
 
+        SUPPRESS_NONSTANDARD_EXTENSION_WARNING();
+
         struct DiffInput
         {
-            const TextFile* a;
-            const TextFile* b;
+            union
+            {
+                struct
+                {
+                    const TextFile* file_a;
+                    const TextFile* file_b;
+                };
+                struct
+                {
+                    const DiffBlockInput* block_a;
+                    const DiffBlockInput* block_b;
+                };
+            };
             bool (*cmp)(const DiffInput*, OffT a_idx, OffT b_idx);
         };
+
+        ENABLE_NONSTANDARD_EXTENSION_WARNING();
 
         void text_file_populate_line_starts(Arena::Arena* arena, TextFile* result)
         {
@@ -87,14 +102,20 @@ namespace Diff
         {
             Editor::CursorLine l_a = Editor::CursorLine(line_a);
             Editor::CursorLine l_b = Editor::CursorLine(line_b);
-            String8 ltxt_a = text_file_line_text(*input->a, l_a);
-            String8 ltxt_b = text_file_line_text(*input->b, l_b);
+            String8 ltxt_a = text_file_line_text(*input->file_a, l_a);
+            String8 ltxt_b = text_file_line_text(*input->file_b, l_b);
             return str8_match_exact(ltxt_a, ltxt_b);
         }
 
-        bool same_text(const DiffInput* input, OffT a_index, OffT b_index)
+        bool same_text(const DiffInput* input, OffT index_a, OffT index_b)
         {
-            return input->a->content.str[a_index] == input->b->content.str[b_index];
+            const TextFile* file_a = input->block_a->file;
+            const TextFile* file_b = input->block_b->file;
+            Editor::CharOffset off_a = input->block_a->block.underlying_off[index_a];
+            Editor::CharOffset off_b = input->block_b->block.underlying_off[index_b];
+            assert(rep(off_a) < file_a->content.size);
+            assert(rep(off_b) < file_b->content.size);
+            return file_a->content.str[rep(off_a)] == file_b->content.str[rep(off_b)];
         }
 
         void push_edit(Arena::Arena* arena, EditList* lst, Edit edit)
@@ -445,6 +466,8 @@ namespace Diff
             if (not middle_snake.found)
             {
                 assert((width + height) == 0);
+                GAP_UNUSED(width);
+                GAP_UNUSED(height);
                 return;
             }
 
@@ -579,10 +602,18 @@ namespace Diff
     EditList diff_file_lines(Arena::Arena* arena, const TextFile& a, const TextFile& b)
     {
         EditList result = {};
-        DiffInput input = { &a, &b, same_line };
+        DiffInput input = { .file_a = &a, .file_b = &b, .cmp = same_line };
         // Note: The box starts at 1, 1 because our lines start as 1-indexed.
         //       The box also ends at lines + 1 as line_starts.size == last line.
         unified_diff_box(arena, &input, make_box(1, 1, OffT(a.line_starts.size) + 1, OffT(b.line_starts.size) + 1), &result);
+        return result;
+    }
+
+    EditList diff_file_block(Arena::Arena* arena, const DiffBlockInput& a, const DiffBlockInput& b)
+    {
+        EditList result = {};
+        DiffInput input = { .block_a = &a, .block_b = &b, .cmp = same_text };
+        unified_diff_box(arena, &input, make_box(0, 0, OffT(a.block.size), OffT(b.block.size)), &result);
         return result;
     }
 } // namespace Diff

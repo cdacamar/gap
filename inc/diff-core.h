@@ -27,7 +27,8 @@ namespace Diff
         Del,
         Ins,
         Eq,
-        Invalid
+        Invalid,
+        Count
     };
 
     struct Edit
@@ -56,6 +57,20 @@ namespace Diff
         Editor::CharOffset last;
     };
 
+    // This describes a block of text to diff.
+    // underlying_off -- the offset into the buffer.  Indices into the array act as the window itself.
+    struct DiffBlock
+    {
+        Editor::CharOffset* underlying_off;
+        uint64_t size;
+    };
+
+    struct DiffBlockInput
+    {
+        DiffBlock block;
+        const TextFile* file;
+    };
+
     // Text files.
     TextFile text_file_read(Arena::Arena* arena, String8 path);
     String8 text_file_line_text(const TextFile& file, Editor::CursorLine line);
@@ -66,4 +81,5 @@ namespace Diff
     // Diffing.
     // Note: This is the linear space variant of the Myers diff algorithm.
     EditList diff_file_lines(Arena::Arena* arena, const TextFile& a, const TextFile& b);
+    EditList diff_file_block(Arena::Arena* arena, const DiffBlockInput& a, const DiffBlockInput& b);
 } // namespace Diff

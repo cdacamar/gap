@@ -1,5 +1,7 @@
 #include "diff-text.h"
 
+#include <cassert>
+
 #include "arena.h"
 #include "basic-scrollbox.h"
 
@@ -9,9 +11,11 @@ namespace Diff
     {
         Arena::Arena* arena;
         Arena::Arena* diff_arena;
+        Arena::Arena* fine_diff_arena;
         Arena::Position base_pos;
         TextFile text;
         MergedDiffView diffs;
+        MergedTextBlocks diff_blocks;
         uint64_t longest_line;
         UI::Widgets::IndexedScrollBox* scroll;
         Glyph::Atlas* atlas;
@@ -43,6 +47,53 @@ namespace Diff
 
             return size;
         }
+
+        struct MergedTextBlocksView
+        {
+            MergedText* first;
+            MergedText* last;
+        };
+
+        // Note: This uses visual lines.
+        MergedTextBlocksView merged_text_blocks_for_view(DiffTextView* widget, uint64_t first_l, uint64_t last_l)
+        {
+            MergedTextBlocksView result = {};
+            // By construction, this list is sorted by line, so we can perform a lower bound
+            // binary search to find the nearest one.
+            if (widget->diff_blocks.size == 0)
+                return result;
+            // We can binary search for the line, but we need the lower bound to capture the first instance of
+            // first_l.
+            uint64_t low = 0;
+            uint64_t high = widget->diff_blocks.size;
+            uint64_t mid = 0;
+            while (low < high)
+            {
+                mid = low + ((high - low) / 2);
+                if (first_l <= widget->diff_blocks.blocks[mid].v_line)
+                {
+                    high = mid;
+                }
+                else
+                {
+                    low = mid + 1;
+                }
+            }
+            // Finding the upperbound can be a simple linear search from here since since
+            // the number of blocks should be relatively small.
+            result.first = &widget->diff_blocks.blocks[low];
+            result.last = widget->diff_blocks.blocks + widget->diff_blocks.size;
+            for (uint64_t i = low + 1; i < widget->diff_blocks.size; ++i)
+            {
+                if (widget->diff_blocks.blocks[i].v_line > last_l)
+                {
+                    result.last = &widget->diff_blocks.blocks[i];
+                    break;
+                }
+            }
+            return result;
+
+        }
     } // namespace [anon]
 
     // Creation.
@@ -52,6 +103,7 @@ namespace Diff
         DiffTextView* widget = Arena::push_array<DiffTextView>(arena, 1);
         widget->arena = arena;
         widget->diff_arena = Arena::alloc(Arena::default_params);
+        widget->fine_diff_arena = Arena::alloc(Arena::default_params);
         // We need to do gross C++ here.
         {
             uint8_t* blob = Arena::push_array_no_zero_aligned<uint8_t>(arena,
@@ -71,6 +123,8 @@ namespace Diff
         using SBox = UI::Widgets::IndexedScrollBox;
         widget->scroll->~SBox();
 
+        Arena::release(widget->diff_arena);
+        Arena::release(widget->fine_diff_arena);
         Arena::Arena* arena = widget->arena;
         Arena::release(arena);
     }
@@ -91,13 +145,14 @@ namespace Diff
         widget->longest_line = 0;
         for EachIndex(l, widget->text.line_starts.size)
         {
-            String8 txt = text_file_line_text(widget->text, Editor::CursorLine{ l });
+            // Note: CursorLine is 1-indexed.
+            String8 txt = text_file_line_text(widget->text, Editor::CursorLine{ l + 1 });
             widget->longest_line = std::max(widget->longest_line, txt.size);
         }
         widget->scroll->scroll_to({});
     }
 
-    void populate_diff(DiffTextView* widget, MergedLineList lst)
+    void populate_line_diff(DiffTextView* widget, MergedLineList lst)
     {
         widget->diffs = {};
         Arena::clear(widget->diff_arena);
@@ -107,6 +162,27 @@ namespace Diff
         for EachNode(n, lst.first)
         {
             widget->diffs.lines[idx++] = n->line;
+        }
+    }
+
+    void populate_text_blocks_diff(DiffTextView* widget, MergedTextList lst)
+    {
+        widget->diff_blocks = {};
+        Arena::clear(widget->fine_diff_arena);
+        widget->diff_blocks.size = lst.count;
+        widget->diff_blocks.blocks = Arena::push_array_no_zero<MergedText>(widget->fine_diff_arena, widget->diff_blocks.size);
+        uint64_t idx = 0;
+        Editor::CursorLine prev_line = {};
+        for EachNode(n, lst.first)
+        {
+            MergedText* merged = &widget->diff_blocks.blocks[idx++];
+            *merged = n->merged;
+            // Compute the line.
+            // We save a lot of time by precomputing this because line lookup by offset is more expensive,
+            // a O(lg n) operation vs an O(1) if we know the line.
+            merged->line = text_file_line_for_offset(widget->text, merged->first);
+            assert(prev_line <= merged->line);
+            prev_line = merged->line;
         }
     }
 
@@ -131,6 +207,7 @@ namespace Diff
 
         const float wheel_offset_amt = UI::standard_font_padding(Glyph::FontSize{ font_ctx.current_font_size() }) * 2.f;
         const int line_height = font_ctx.current_font_line_height();
+        const float glyph_width_est = font_ctx.measure_text("H").x;
 
         // Setup the scroll widget.
         CmdBuffer::ClipRect content_clip = UI::convert(widget->scroll->content_viewport(UI::convert(clip)));
@@ -173,6 +250,13 @@ namespace Diff
             uint64_t first = uint64_t(off.idx);
             uint64_t last = first + (off.offset.y > 0.f) + lines_per_v;
             last = std::clamp(last, first, widget->diffs.size - 1);
+            Vec4f colors_map[] =
+            {
+                colors.del,                // EditType::Del
+                colors.ins,                // EditType::Ins
+                colors.eq,                 // EditType::Eq
+                hex_to_vec4f(0xd4d4d4aa), // EditType::Invalid
+            };
             Vec4f color;
 
             // First, go through and add the boxes.
@@ -185,14 +269,13 @@ namespace Diff
             {
                 MergedLine l = widget->diffs.lines[hl_line];
                 Vec2f size = { rep(content_clip.width) + off.offset.x, line_height + 0.f };
+                color = colors_map[rep(l.type)];
                 switch (l.type)
                 {
                 case EditType::Del:
-                    color = colors.del;
                     color.a = .25f;
                     break;
                 case EditType::Ins:
-                    color = colors.ins;
                     color.a = .25f;
                     break;
                 case EditType::Eq:
@@ -200,7 +283,6 @@ namespace Diff
                     size.y = 0.f;
                     break;
                 case EditType::Invalid:
-                    color = hex_to_vec4f(0xd4d4d4aa);
                     color.a = 0.1f;
                     break;
                 }
@@ -212,32 +294,53 @@ namespace Diff
                 hl_pos.y -= line_height;
             }
 
+            MergedTextBlocksView merged_blocks_view = merged_text_blocks_for_view(widget, first, last);
+            // Iterate the more fine-diff highlights.
+            for (; merged_blocks_view.first != merged_blocks_view.last; ++merged_blocks_view.first)
+            {
+                MergedText* merged = merged_blocks_view.first;
+                // Pull the text line so we can figure out how far to offset this highlight.
+                // Note: These lines need to be offset by 1 because they're indexed by 1 internally.
+                LineRange line_rng = text_file_line_range(widget->text, merged->line);
+                String8 line_txt = text_file_line_text(widget->text, merged->line);
+                String8 before_txt = str8_substr(line_txt, { .len = rep(distance(line_rng.first, merged->first)) });
+                String8 after_txt = str8_substr(line_txt, { .off = before_txt.size, .len = rep(distance(merged->first, merged->last)) });
+                Vec2f size;
+                size.x = font_ctx.measure_text(after_txt).x;
+                size.y = line_height + 0.f;
+                // Add glyph_width_est to skip the insertion/deletion designator.
+                hl_pos.x = start_pos.x + glyph_width_est + font_ctx.measure_text(before_txt).x;
+                hl_pos.y = start_pos.y - (static_cast<float>(merged->v_line - first) * line_height) - line_hl_offset * line_height;
+                color = colors_map[rep(merged->type)];
+                color.a = 0.5;
+                CmdBuffer::solid_rect(lst, Render::FragShader::BasicColor, hl_pos, size, color);
+            }
+
             CmdBuffer::start_glyph_run(lst, Render::VertShader::OneOneTransform);
             for (; first <= last; ++first)
             {
                 MergedLine l = widget->diffs.lines[first];
                 String8 txt = str8_empty;
                 Vec2f pos = start_pos;
+                color = colors_map[rep(l.type)];
                 switch (l.type)
                 {
                 case EditType::Del:
-                    color = colors.del;
                     pos = font_ctx.render_text(lst, "-", pos, color);
                     txt = str8_substr(widget->text.content, { .off = rep(l.first), .len = rep(distance(l.first, l.last)) });
                     break;
                 case EditType::Ins:
-                    color = colors.ins;
                     pos = font_ctx.render_text(lst, "+", pos, color);
                     txt = str8_substr(widget->text.content, { .off = rep(l.first), .len = rep(distance(l.first, l.last)) });
                     break;
                 case EditType::Eq:
-                    color = colors.eq;
+                    pos = font_ctx.render_text(lst, " ", pos, color);
                     txt = str8_substr(widget->text.content, { .off = rep(l.first), .len = rep(distance(l.first, l.last)) });
                     break;
                 case EditType::Invalid:
                     break;
                 }
-                font_ctx.render_text(lst, txt, pos, color);
+                font_ctx.render_text(lst, txt, pos, colors.eq);
                 start_pos.y -= line_height;
             }
         }
