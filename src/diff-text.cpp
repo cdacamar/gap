@@ -240,7 +240,7 @@ namespace Diff
             for (; first <= last; first = extend(first))
             {
                 String8 txt = text_file_line_text(widget->text, first);
-                font_ctx.render_text(lst, txt, start_pos, colors.eq);
+                font_ctx.render_text(lst, txt, start_pos, colors.eq_txt);
                 start_pos.y -= line_height;
             }
         }
@@ -250,12 +250,20 @@ namespace Diff
             uint64_t first = uint64_t(off.idx);
             uint64_t last = first + (off.offset.y > 0.f) + lines_per_v;
             last = std::clamp(last, first, widget->diffs.size - 1);
-            Vec4f colors_map[] =
+            Vec4f colors_line_map[] =
             {
-                colors.del,                // EditType::Del
-                colors.ins,                // EditType::Ins
-                colors.eq,                 // EditType::Eq
-                hex_to_vec4f(0xd4d4d4aa), // EditType::Invalid
+                colors.del_line,                // EditType::Del
+                colors.ins_line,                // EditType::Ins
+                colors.eq_line,                 // EditType::Eq
+                colors.gap_line,                // EditType::Invalid
+            };
+
+            Vec4f colors_txt_map[] =
+            {
+                colors.del_txt,                // EditType::Del
+                colors.ins_txt,                // EditType::Ins
+                colors.eq_txt,                 // EditType::Eq
+                colors.gap_line,               // EditType::Invalid
             };
             Vec4f color;
 
@@ -269,25 +277,9 @@ namespace Diff
             {
                 MergedLine l = widget->diffs.lines[hl_line];
                 Vec2f size = { rep(content_clip.width) + off.offset.x, line_height + 0.f };
-                color = colors_map[rep(l.type)];
-                switch (l.type)
-                {
-                case EditType::Del:
-                    color.a = .25f;
-                    break;
-                case EditType::Ins:
-                    color.a = .25f;
-                    break;
-                case EditType::Eq:
-                    // Tells the logic below not to render.
-                    size.y = 0.f;
-                    break;
-                case EditType::Invalid:
-                    color.a = 0.1f;
-                    break;
-                }
-
-                if (size.y != 0.f)
+                color = colors_line_map[rep(l.type)];
+                // Don't highlight equal lines.
+                if (l.type != EditType::Eq)
                 {
                     CmdBuffer::solid_rect(lst, Render::FragShader::BasicColor, hl_pos, size, color);
                 }
@@ -311,8 +303,7 @@ namespace Diff
                 // Add glyph_width_est to skip the insertion/deletion designator.
                 hl_pos.x = start_pos.x + glyph_width_est + font_ctx.measure_text(before_txt).x;
                 hl_pos.y = start_pos.y - (static_cast<float>(merged->v_line - first) * line_height) - line_hl_offset * line_height;
-                color = colors_map[rep(merged->type)];
-                color.a = 0.5;
+                color = colors_txt_map[rep(merged->type)];
                 CmdBuffer::solid_rect(lst, Render::FragShader::BasicColor, hl_pos, size, color);
             }
 
@@ -322,25 +313,24 @@ namespace Diff
                 MergedLine l = widget->diffs.lines[first];
                 String8 txt = str8_empty;
                 Vec2f pos = start_pos;
-                color = colors_map[rep(l.type)];
                 switch (l.type)
                 {
                 case EditType::Del:
-                    pos = font_ctx.render_text(lst, "-", pos, color);
+                    pos = font_ctx.render_text(lst, "-", pos, colors.del_mark);
                     txt = str8_substr(widget->text.content, { .off = rep(l.first), .len = rep(distance(l.first, l.last)) });
                     break;
                 case EditType::Ins:
-                    pos = font_ctx.render_text(lst, "+", pos, color);
+                    pos = font_ctx.render_text(lst, "+", pos, colors.ins_mark);
                     txt = str8_substr(widget->text.content, { .off = rep(l.first), .len = rep(distance(l.first, l.last)) });
                     break;
                 case EditType::Eq:
-                    pos = font_ctx.render_text(lst, " ", pos, color);
+                    pos = font_ctx.render_text(lst, " ", pos, colors.eq_txt);
                     txt = str8_substr(widget->text.content, { .off = rep(l.first), .len = rep(distance(l.first, l.last)) });
                     break;
                 case EditType::Invalid:
                     break;
                 }
-                font_ctx.render_text(lst, txt, pos, colors.eq);
+                font_ctx.render_text(lst, txt, pos, colors.eq_txt);
                 start_pos.y -= line_height;
             }
         }

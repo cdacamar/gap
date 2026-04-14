@@ -259,10 +259,16 @@ namespace Config
         DiffColors diff_colors_instance =
         {
             .background                 = hex_to_vec4f(0x1F1F1FFF),
-            .del                        = hex_to_vec4f(0xFF0000FF),
-            .ins                        = hex_to_vec4f(0x00FF00FF),
-            .eq                         = hex_to_vec4f(0xFFFFFFFF),
+            .del_line                   = hex_to_vec4f(0xFF000040),
+            .ins_line                   = hex_to_vec4f(0x00FF0040),
+            .eq_line                    = hex_to_vec4f(0xFFFFFF40),
+            .gap_line                   = hex_to_vec4f(0xD3D4D419),
+            .del_txt                    = hex_to_vec4f(0xFF00007E),
+            .ins_txt                    = hex_to_vec4f(0x00FF007E),
+            .eq_txt                     = hex_to_vec4f(0xFFFFFFFF),
             .trimmed_text               = hex_to_vec4f(0xE3811CFF),
+            .del_mark                   = hex_to_vec4f(0xFF0000FF),
+            .ins_mark                   = hex_to_vec4f(0x00FF00FF),
         };
 
         DiffColors diff_colors_inverse_instance;
