@@ -259,6 +259,7 @@ namespace Config
         DiffColors diff_colors_instance =
         {
             .background                 = hex_to_vec4f(0x1F1F1FFF),
+            .line_numbers               = hex_to_vec4f(0x8A8592FF),
             .whitespace                 = hex_to_vec4f(0xE3E4E229),
             .del_line                   = hex_to_vec4f(0xFF000040),
             .ins_line                   = hex_to_vec4f(0x00FF0040),

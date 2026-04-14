@@ -121,4 +121,4 @@ inline auto lerp(const T& start, const T& end, const U& mixin)
     return start * (1 - mixin) + end * mixin;
 }
 
-size_t digits(size_t n);
+uint64_t digits(uint64_t n);

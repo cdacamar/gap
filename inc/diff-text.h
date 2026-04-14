@@ -12,6 +12,7 @@ namespace Diff
         Editor::CharOffset first; // First == sentinel implies gap line.
         Editor::CharOffset last;
         uint64_t v_line; // The visual line into the merged buffer.
+        Editor::CursorLine line; // Line for actual text.
         EditType type;
     };
 

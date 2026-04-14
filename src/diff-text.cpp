@@ -33,15 +33,13 @@ namespace Diff
             size.entry_size.y = static_cast<float>(line_height);
             size.entry_size.x = glyph_width_est * widget->longest_line;
 
-#if 0
             // If line numbers are enabled, factor in the largest number.
-            if (data->show_line_numbers)
+            if (Config::diff_state().show_line_numbers)
             {
-                auto num_digits = digits(rep(buffer(data)->line_count()));
+                uint64_t num_digits = digits(size.v_size);
                 // +1 more for the '.' and one more for padding.
                 size.entry_size.x += num_digits * glyph_width_est + glyph_width_est + glyph_width_est;
             }
-#endif
 
             size.entry_size.x += glyph_width_est;
 
@@ -288,6 +286,53 @@ namespace Diff
                 hl_pos.y -= line_height;
             }
 
+            // Render the line numbers now so it will offset all of the positions for highlights/text below.
+            CmdBuffer::start_glyph_run(lst, Render::VertShader::OneOneTransform);
+            if (Config::diff_state().show_line_numbers)
+            {
+                const uint64_t max_digits = digits(widget->diffs.size);
+                constexpr char target_string[] = "999999999.";
+                char line_num_buf[std::size(target_string)];
+                String8 line_num = fmt_string(line_num_buf, "%I64d.", widget->diffs.size);
+                // Measure this because it will serve as the basis to left-align all the others.
+                Vec2f size = font_ctx.measure_text(line_num);
+                // Note: we add +1 to 'max_digits' here because we need to factor in the size of each mono-space
+                // numeric glyph + the '.' character.
+                const float padding_per_digit = size.x / (max_digits + 1);
+                // We're going to create a lookup index so we can very quickly compute how the
+                // line numbers should be adjusted.
+                // Note: do we really have files over 999,999,999 lines?
+                constexpr int max_line_number_digits = 9;
+                float table[max_line_number_digits];
+                for (int i = 0; i < max_line_number_digits; ++i)
+                {
+                    table[i] = (max_digits - (i + 1)) * (padding_per_digit);
+                }
+                Vec2f line_num_pos = start_pos;
+                // We don't want to offset the line numbers horizontally the same way the text is.
+                line_num_pos.x = 0.f;
+                uint64_t first_line = first;
+                uint64_t last_line = last;
+                // Seed the first line position.
+                Vec2f pos;
+                for (; first_line <= last_line; ++first_line)
+                {
+                    // Pull the actual line number out, if there is one.
+                    MergedLine line = widget->diffs.lines[first_line];
+                    if (line.type != EditType::Invalid)
+                    {
+                        pos = line_num_pos;
+                        pos.x += table[digits(rep(line.line)) - 1];
+                        line_num = fmt_string(line_num_buf, "%I64d.", rep(line.line));
+                        pos = font_ctx.render_text(lst, line_num, pos, colors.line_numbers);
+                    }
+                    line_num_pos.y -= line_height;
+                }
+                // Finally, offset the start pos for the text blow.
+                start_pos.x += (max_digits + 2) * padding_per_digit;
+            }
+
+            CmdBuffer::start_shapes(lst, Render::VertShader::OneOneTransform);
             MergedTextBlocksView merged_blocks_view = merged_text_blocks_for_view(widget, first, last);
             // Iterate the more fine-diff highlights.
             for (; merged_blocks_view.first != merged_blocks_view.last; ++merged_blocks_view.first)

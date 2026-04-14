@@ -372,6 +372,7 @@ namespace Diff
                         .first = rng_a.first,
                         .last = rng_a.last,
                         .v_line = lst_A.count,
+                        .line = Editor::CursorLine(e->edit.idx_a),
                         .type = EditType::Del,
                     };
                     push_merge_line(scratch.arena, &lst_A, line_a);
@@ -379,6 +380,7 @@ namespace Diff
                         .first = Editor::CharOffset::Sentinel,
                         .last = Editor::CharOffset::Sentinel,
                         .v_line = lst_B.count,
+                        .line = Editor::CursorLine::Beginning,
                         .type = EditType::Invalid,
                     };
                     push_merge_line(scratch.arena, &lst_merge_B, line_b);
@@ -394,6 +396,7 @@ namespace Diff
                         .first = rng_b.first,
                         .last = rng_b.last,
                         .v_line = lst_B.count,
+                        .line = Editor::CursorLine(e->edit.idx_b),
                         .type = EditType::Ins,
                     };
                     // Try to pull from the merged list.  If we have one, we don't need to add
@@ -406,6 +409,7 @@ namespace Diff
                             .first = Editor::CharOffset::Sentinel,
                             .last = Editor::CharOffset::Sentinel,
                             .v_line = lst_A.count,
+                            .line = Editor::CursorLine::Beginning,
                             .type = EditType::Invalid,
                         };
                         push_merge_line(scratch.arena, &lst_A, line_a);
@@ -436,6 +440,7 @@ namespace Diff
                             .first = Editor::CharOffset::Sentinel,
                             .last = Editor::CharOffset::Sentinel,
                             .v_line = lst_B.count,
+                            .line = Editor::CursorLine::Beginning,
                             .type = EditType::Invalid,
                         };
                         // Insert B.
@@ -456,12 +461,14 @@ namespace Diff
                         .first = rng_a.first,
                         .last = rng_a.last,
                         .v_line = lst_A.count,
+                        .line = Editor::CursorLine(e->edit.idx_a),
                         .type = EditType::Eq,
                     };
                     MergedLine line_b = {
                         .first = rng_b.first,
                         .last = rng_b.last,
                         .v_line = lst_B.count,
+                        .line = Editor::CursorLine(e->edit.idx_b),
                         .type = EditType::Eq,
                     };
                     push_merge_line(scratch.arena, &lst_A, line_a);

@@ -339,7 +339,7 @@ Vec4f hsl_to_rgb(HSLInput in)
     return result;
 }
 
-size_t digits(size_t n)
+uint64_t digits(uint64_t n)
 {
-    return static_cast<size_t>(std::floor(std::log10(n) + 1));
+    return static_cast<uint64_t>(std::floor(std::log10(n) + 1));
 }
