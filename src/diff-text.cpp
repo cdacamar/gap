@@ -211,6 +211,7 @@ namespace Diff
             if (hotkey(*state, Hotkey::GLB_TextLineDown))
             {
                 UI::Widgets::IndexedScrollOffset off = widget->scroll->position();
+                off.offset.y = 0.f;
                 off.idx = std::min(off.idx + 1, scroll_size.v_size - 1);
                 widget->scroll->scroll_to(off);
                 resp.scroll_changed = true;
@@ -228,6 +229,7 @@ namespace Diff
             if (hotkey(*state, Hotkey::GLB_TextPageDown))
             {
                 UI::Widgets::IndexedScrollOffset off = widget->scroll->position();
+                off.offset.y = 0.f;
                 off.idx = std::min(off.idx + widget->idx_page_jump, scroll_size.v_size - 1);
                 widget->scroll->scroll_to(off);
                 resp.scroll_changed = true;
