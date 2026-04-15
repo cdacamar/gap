@@ -1123,6 +1123,7 @@ namespace Help
             CmdBuffer::start_images(lst, Render::VertShader::OneOneTransform);
             CmdBuffer::push_texture(lst, lgo.tex);
             pos.y = rep(window_vp.height) - size.y;
+            pos.y -= (rep(window_vp.height) - size.y) / 2;
 
             // Flip the image so it will be presented properly.
             pos.y += size.y;

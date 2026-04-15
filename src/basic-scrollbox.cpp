@@ -684,7 +684,8 @@ namespace UI::Widgets
         int64_t min_idx = scroll_off.idx + partial_idx_add;
         int64_t idx_per_view = static_cast<int64_t>(content_size.y / data->content_size.entry_size.y) - 1;
         int64_t max_idx = min_idx + idx_per_view;
-        max_idx = std::clamp(max_idx, int64_t(0ll), idx_scroll_max_idx(*data));
+        int64_t max_possible_idx = idx_scroll_max_idx(*data);
+        max_idx = std::clamp(max_idx, int64_t(0ll), max_possible_idx);
 
         // Hit tests.
         if (idx < min_idx)

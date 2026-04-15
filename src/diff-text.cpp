@@ -17,6 +17,8 @@ namespace Diff
         MergedDiffView diffs;
         MergedTextBlocks diff_blocks;
         uint64_t longest_line;
+        int64_t idx_page_jump;
+        int64_t idx_mid;
         UI::Widgets::IndexedScrollBox* scroll;
         Glyph::Atlas* atlas;
     };
@@ -201,12 +203,64 @@ namespace Diff
         CmdBuffer::ClipRect clip = CmdBuffer::current_clip(*lst);
         const Config::DiffColors& colors = Config::diff_colors();
         Glyph::RenderFontContext font_ctx = widget->atlas->render_font_context(Glyph::FontSize{ Config::diff_state().diff_font_size });
+        UI::Widgets::IndexedScrollContentSize scroll_size = content_size(widget, &font_ctx);
+        const int line_height = font_ctx.current_font_line_height();
+        // Process input.
+        if (mouse_in_clip(state->mouse.ui_mouse, clip))
+        {
+            if (hotkey(*state, Hotkey::GLB_TextLineDown))
+            {
+                UI::Widgets::IndexedScrollOffset off = widget->scroll->position();
+                off.idx = std::min(off.idx + 1, scroll_size.v_size - 1);
+                widget->scroll->scroll_to(off);
+                resp.scroll_changed = true;
+            }
+
+            if (hotkey(*state, Hotkey::GLB_TextLineUp))
+            {
+                UI::Widgets::IndexedScrollOffset off = widget->scroll->position();
+                off.offset.y = 0.f;
+                off.idx = std::max(off.idx - 1, int64_t(0));
+                widget->scroll->scroll_to(off);
+                resp.scroll_changed = true;
+            }
+
+            if (hotkey(*state, Hotkey::GLB_TextPageDown))
+            {
+                UI::Widgets::IndexedScrollOffset off = widget->scroll->position();
+                off.idx = std::min(off.idx + widget->idx_page_jump, scroll_size.v_size - 1);
+                widget->scroll->scroll_to(off);
+                resp.scroll_changed = true;
+            }
+
+            if (hotkey(*state, Hotkey::GLB_TextPageUp))
+            {
+                UI::Widgets::IndexedScrollOffset off = widget->scroll->position();
+                off.offset.y = 0.f;
+                off.idx = std::max(off.idx - widget->idx_page_jump, int64_t(0));
+                widget->scroll->scroll_to(off);
+                resp.scroll_changed = true;
+            }
+
+            if (hotkey(*state, Hotkey::GLB_TextBeginning))
+            {
+                UI::Widgets::IndexedScrollOffset off = {};
+                widget->scroll->scroll_to(off);
+                resp.scroll_changed = true;
+            }
+
+            if (hotkey(*state, Hotkey::GLB_TextEnd))
+            {
+                UI::Widgets::IndexedScrollOffset off = {};
+                off.idx = scroll_size.v_size - 1;
+                widget->scroll->scroll_to(off);
+                resp.scroll_changed = true;
+            }
+        }
         font_ctx.render_whitespace(Config::system_effects().render_whitespace);
         font_ctx.whitespace_color(colors.whitespace);
-        UI::Widgets::IndexedScrollContentSize scroll_size = content_size(widget, &font_ctx);
 
         const float wheel_offset_amt = UI::standard_font_padding(Glyph::FontSize{ font_ctx.current_font_size() }) * 2.f;
-        const int line_height = font_ctx.current_font_line_height();
         const float glyph_width_est = font_ctx.measure_text("H").x;
 
         // Setup the scroll widget.
@@ -216,7 +270,7 @@ namespace Diff
             scroll_size.entry_size.x = std::clamp(scroll_size.entry_size.x - rep(content_clip.width), 0.f, scroll_size.entry_size.x);
             widget->scroll->content_size(scroll_size);
             auto r = widget->scroll->build(lst, state, wheel_offset_amt, UI::Widgets::BuildScrollBoxFlags::None);
-            resp.scroll_changed = r.scroll_changed;
+            resp.scroll_changed |= r.scroll_changed;
         }
         CmdBuffer::push_clip(lst, content_clip);
 
@@ -227,6 +281,9 @@ namespace Diff
         // Note: X-offset needs to pull text to left of viewport.
         start_pos.x = -off.offset.x;
         start_pos.y = rep(content_clip.height) + off.offset.y - font_ctx.current_font_size();
+        // Let's also cache the page jump amount.
+        widget->idx_page_jump = static_cast<uint64_t>(lines_per_v * .75f);
+        widget->idx_mid = (off.idx + lines_per_v) / 2;
 
         // Core text.
         if (widget->diffs.size == 0)
