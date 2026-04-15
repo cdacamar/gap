@@ -1473,7 +1473,7 @@ int gap_main_entry(int argc, char** argv)
             }
             Arena::scratch_end(scratch);
         }
-        Diff::apply_diff(diff_panel);
+        Diff::apply_diff(diff_panel, &message_feed);
     }
 
     PROF_END(main_ctx);

@@ -138,6 +138,11 @@ namespace Diff
     // Interaction.
     void populate_text(DiffTextView* widget, const TextFile& text)
     {
+        // If we populate text, we should remove the existing diffs as well.
+        widget->diffs = {};
+        widget->diff_blocks = {};
+        Arena::clear(widget->diff_arena);
+        Arena::clear(widget->fine_diff_arena);
         // Copy the text file into our widget arena.
         Arena::pop_to(widget->arena, widget->base_pos);
         widget->text = text_file_copy_to(widget->arena, text);

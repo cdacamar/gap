@@ -499,6 +499,7 @@ namespace Diff
     TextFile text_file_read(Arena::Arena* arena, String8 path)
     {
         TextFile result = {};
+        result.path = str8_copy(arena, path);
         if (read_entire_file(arena, &result.content, path))
         {
             text_file_populate_line_starts(arena, &result);
@@ -592,6 +593,7 @@ namespace Diff
     TextFile text_file_copy_to(Arena::Arena* arena, const TextFile& file)
     {
         TextFile result = {};
+        result.path = str8_copy(arena, file.path);
         result.content = str8_copy(arena, file.content);
         result.line_starts.size = file.line_starts.size;
         result.line_starts.array = Arena::push_array_no_zero<Editor::CharOffset>(arena, result.line_starts.size);

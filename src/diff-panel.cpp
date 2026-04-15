@@ -2,8 +2,11 @@
 
 #include <cassert>
 
+#include "basic-button.h"
 #include "diff-text.h"
 #include "gap-core.h"
+#include "timers.h"
+#include "tooltips.h"
 
 namespace Diff
 {
@@ -22,7 +25,10 @@ namespace Diff
             float ease_offset;
         };
 
-        read_only PartitionPanel null_panel_inst = {};
+        read_only PartitionPanel null_panel_inst = {
+            .sib_next = &null_panel_inst,
+            .sib_prev = &null_panel_inst,
+        };
 
         PartitionPanel* null_panel()
         {
@@ -61,6 +67,12 @@ namespace Diff
             // Allocate the diff text view.
             panel->view = make_diff_text_view(atlas, UI::Widgets::make_id_seed(panel->id, "txt_view"));
         }
+
+        enum class PanelButtons
+        {
+            SwapDiffs,
+            Count
+        };
     } // namespace [anon]
 
     struct DiffPanel
@@ -335,8 +347,10 @@ namespace Diff
         }
     }
 
-    void apply_diff(DiffPanel* panel)
+    void apply_diff(DiffPanel* panel, Feed::MessageFeed* feed)
     {
+        Timers::Stopwatch sw;
+        sw.start();
         auto scratch = Arena::scratch_begin(Arena::no_conflicts);
         // This is so that we can avoid possible chaining of scratch above.
         auto scratch2 = Arena::scratch_begin({ &scratch.arena, 1 });
@@ -493,6 +507,9 @@ namespace Diff
         populate_text_blocks_diff(panel->A.view, merged_txt_A);
         populate_text_blocks_diff(panel->B.view, merged_txt_B);
         Arena::scratch_end(scratch2);
+        sw.stop();
+        String8 msg = str8_fmt(scratch.arena, "Diff computed in %ums", sw.to_ms());
+        feed->queue_info(msg);
         Arena::scratch_end(scratch);
     }
 
@@ -501,11 +518,12 @@ namespace Diff
                             CmdBuffer::CmdList* cmd_lst,
                             CmdBuffer::DrawList* core_lst,
                             UI::UIState* state,
-                            Feed::MessageFeed*)
+                            Feed::MessageFeed* feed)
     {
         PROF_SCOPE();
 
         auto clip = CmdBuffer::current_clip(*core_lst);
+        const auto& colors = Config::widget_colors();
 
         // Start the frame for the enclosing editor frame.
         CmdBuffer::new_frame(panel->frame_lst, core_lst->screen, { .dt = core_lst->delta_time, .app_time = core_lst->app_time });
@@ -517,18 +535,113 @@ namespace Diff
         CmdBuffer::push_color_palette(panel->frame_lst, *CmdBuffer::current_palette(*core_lst));
 
         // Build panel decoration UI.
-#if 0
         {
             CmdBuffer::ClipRect header_clip = clip;
             Glyph::FontSize font_size = Glyph::FontSize{ Config::diff_state().diff_font_size };
-            header_clip.height = Height(UI::standard_font_padding(font_size));
+            auto font_ctx = panel->atlas->render_font_context(font_size);
+            header_clip.height = Height(UI::standard_font_padding(font_size) * 2);
+            Vec2f base_pos;
+            base_pos.y = static_cast<float>(rep(clip.height));
+            // Add function buttons.
+            {
+                UI::Widgets::ID btn_ids[] = 
+                {
+                    UI::Widgets::make_id_seed(panel->id, "swap-diffs"),
+                };
+
+                constexpr String8View btn_tips[] =
+                {
+                    str8_literal("Swap files"),
+                };
+
+                UI::Widgets::BuildIconicButtonInput btns[] =
+                {
+                    {
+                        .id = btn_ids[rep(PanelButtons::SwapDiffs)],
+                        .icon = Glyph::SpecialGlyph::Replace,
+                        .padding = { PartitionPanel::padding },
+                        .thickness = PartitionPanel::padding,
+                    },
+                };
+                static_assert(std::size(btn_ids) == count_of<PanelButtons>);
+                static_assert(std::size(btn_tips) == count_of<PanelButtons>);
+                static_assert(std::size(btns) == count_of<PanelButtons>);
+
+                // Find out the total width of the buttons.
+                float btn_width = 0.f;
+                for EachIndex(i, count_of<PanelButtons>)
+                {
+                    auto btn_size = UI::Widgets::measure_iconic_button(&font_ctx, btns[i]);
+                    btn_width += btn_size.x + PartitionPanel::padding;
+                }
+                // Center.
+                Vec2f btn_pos = base_pos;
+                btn_pos.x = (rep(header_clip.width) - btn_width) / 2.f;
+                btn_pos.y -= UI::standard_font_padding(font_size);
+                // Layout.
+                for EachIndex(i, count_of<PanelButtons>)
+                {
+                    btns[i].pos = btn_pos;
+                    auto btn_resp = UI::Widgets::basic_iconic_button(panel->frame_lst, state, &font_ctx, btns[i], UI::Widgets::BuildButtonFlags::None);
+                    btn_pos.x += btn_resp.btn_size.x;
+                    // Place tooltips.
+                    if (not state->tooltip.enabled and UI::hot_widget_set(*state, btn_ids[i]))
+                    {
+                        UI::Widgets::TextTooltipInput tip_in = {
+                            .text = sv_str8(str8_mut(btn_tips[i])),
+                            .padding = PartitionPanel::padding,
+                            .screen_pos = state->mouse.ui_mouse
+                        };
+                        UI::Widgets::basic_text_tooltip(state, core_lst, &font_ctx, tip_in);
+                    }
+                    // Process click.
+                    if (btn_resp.clicked)
+                    {
+                        switch (PanelButtons(i))
+                        {
+                        case PanelButtons::SwapDiffs:
+                            {
+                                auto scratch = Arena::scratch_begin(Arena::no_conflicts);
+                                // Copy the files out to the scratch, then repopulate them in the opposite order.
+                                TextFile new_B = text_file_copy_to(scratch.arena, *text_file(panel->A.view));
+                                TextFile new_A = text_file_copy_to(scratch.arena, *text_file(panel->B.view));
+                                file_A(panel, new_A);
+                                file_B(panel, new_B);
+                                Arena::scratch_end(scratch);
+                                // Free up the scratch arena so we can use it to populate diffs.
+                                apply_diff(panel, feed);
+                            }
+                            break;
+                        }
+                    }
+                }
+                // Move down for next row.
+                base_pos.y -= UI::standard_font_padding(font_size);
+            }
+            // Create titles for each panel and center them.
+            for (PartitionPanel* child = &panel->A;
+                not null_panel(child);
+                child = child->sib_next)
+            {
+                CmdBuffer::ClipRect child_clip = clip_from_parent(clip, &panel->A, child);
+                const TextFile* file = text_file(child->view);
+                String8 name = file->path;
+                CmdBuffer::start_glyph_run(panel->frame_lst, Render::VertShader::OneOneTransform);
+                Vec2f pos = base_pos;
+                pos.y -= font_ctx.current_font_line_height();
+                pos.x = rep(child_clip.offset_x) + (rep(child_clip.width) - font_ctx.measure_text(name).x) / 2.f;
+                font_ctx.render_text(panel->frame_lst, name, pos, colors.window_title_font_color);
+            }
+            // Replace the clip.
+            clip.height = retract(clip.height, rep(header_clip.height));
+            CmdBuffer::pop_clip(panel->frame_lst);
+            CmdBuffer::push_clip(panel->frame_lst, clip);
         }
-#endif
 
         // Build non-leaf UI.
         {
             CmdBuffer::start_shapes(panel->frame_lst, Render::VertShader::OneOneTransform);
-            Vec4f region_color = Config::widget_colors().outline_selection;
+            Vec4f region_color = colors.outline_selection;
             const float boundary_width_bias = Config::diff_state().diff_font_size / 3.f;
             for (PartitionPanel* child = &panel->A;
                 // Non-leaf UI does only involves inner-panels (e.g. the fence post problem).

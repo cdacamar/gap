@@ -14,6 +14,7 @@ namespace Diff
 
     struct TextFile
     {
+        String8 path;
         String8 content;
         LineStarts line_starts;
     };
