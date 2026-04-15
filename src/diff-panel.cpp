@@ -517,6 +517,13 @@ namespace Diff
         // Default palette.
         CmdBuffer::push_color_palette(panel->frame_lst, *CmdBuffer::current_palette(*core_lst));
 
+        // Build panel decoration UI.
+        {
+            CmdBuffer::ClipRect header_clip = clip;
+            Glyph::FontSize font_size = Glyph::FontSize{ Config::diff_state().diff_font_size };
+            header_clip.height = Height(UI::standard_font_padding(font_size));
+        }
+
         // Build non-leaf UI.
         {
             CmdBuffer::start_shapes(panel->frame_lst, Render::VertShader::OneOneTransform);

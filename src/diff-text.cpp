@@ -329,7 +329,12 @@ namespace Diff
                     line_num_pos.y -= line_height;
                 }
                 // Finally, offset the start pos for the text blow.
-                start_pos.x += (max_digits + 2) * padding_per_digit;
+                // Replace the current clip so we can clip any text that tries to enter this region.
+                CmdBuffer::pop_clip(lst);
+                int off_width = static_cast<int>((max_digits + 2) * padding_per_digit);
+                content_clip.offset_x = UI::offset_from(content_clip.offset_x, off_width);
+                content_clip.width = Width{ rep(content_clip.width) - off_width };
+                CmdBuffer::push_clip(lst, content_clip);
             }
 
             CmdBuffer::start_shapes(lst, Render::VertShader::OneOneTransform);
