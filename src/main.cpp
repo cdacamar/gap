@@ -1441,7 +1441,6 @@ int gap_main_entry(int argc, char** argv)
 
     // Now that the atlas is populated, we can load the file(s).
     {
-        String8 path_to_open = str8_empty;
         if (argc > 1)
         {
             auto scratch = Arena::scratch_begin(Arena::no_conflicts);

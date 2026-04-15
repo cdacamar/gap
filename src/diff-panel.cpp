@@ -435,7 +435,6 @@ namespace Diff
                     while (node != nullptr)
                     {
                         // Add gap from B.
-                        LineRange rng_b = text_file_line_range(*b, Editor::CursorLine(e->edit.idx_b));
                         MergedLine line_b = {
                             .first = Editor::CharOffset::Sentinel,
                             .last = Editor::CharOffset::Sentinel,
@@ -518,11 +517,13 @@ namespace Diff
         CmdBuffer::push_color_palette(panel->frame_lst, *CmdBuffer::current_palette(*core_lst));
 
         // Build panel decoration UI.
+#if 0
         {
             CmdBuffer::ClipRect header_clip = clip;
             Glyph::FontSize font_size = Glyph::FontSize{ Config::diff_state().diff_font_size };
             header_clip.height = Height(UI::standard_font_padding(font_size));
         }
+#endif
 
         // Build non-leaf UI.
         {

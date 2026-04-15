@@ -205,6 +205,7 @@ namespace Diff
             // access never happens because we fill each box from the inside out so each successive
             // box as distance grows will always have a valid inner box to index into.
 
+            SUPPRESS_MULTI_LINE_COMMENT_WARNING();
             // Here's a helpful graphic of the boxes being built for the sample code:
             // // a.c
             //
@@ -286,6 +287,7 @@ namespace Diff
             // 17                                                              o---o---o---o
             //                                                                 |   |   | \ |
             // 18                                                              o---o---o---o
+            ENABLE_MULTI_LINE_COMMENT_WARNING();
 
             // Because we're searching an area over 'k' and 'c' and these will include negative numbers, we
             // split our buffer in half and start indexing into that so we can go backwards.  Since the area
