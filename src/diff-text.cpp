@@ -12,11 +12,17 @@ namespace Diff
         Arena::Arena* arena;
         Arena::Arena* diff_arena;
         Arena::Arena* fine_diff_arena;
+        Arena::Arena* ctx_diff_arena;
         Arena::Position base_pos;
         TextFile text;
+        MergedDiffView full_diffs;
+        MergedTextBlocks full_diff_blocks;
+        // These two are reduced snapshots of the structures above based on
+        // needed context window.
         MergedDiffView diffs;
         MergedTextBlocks diff_blocks;
         uint64_t longest_line;
+        uint64_t max_line;
         int64_t idx_page_jump;
         int64_t idx_mid;
         UI::Widgets::IndexedScrollBox* scroll;
@@ -55,22 +61,22 @@ namespace Diff
         };
 
         // Note: This uses visual lines.
-        MergedTextBlocksView merged_text_blocks_for_view(DiffTextView* widget, uint64_t first_l, uint64_t last_l)
+        MergedTextBlocksView merged_text_blocks_for_view(MergedTextBlocks* blocks, uint64_t first_l, uint64_t last_l)
         {
             MergedTextBlocksView result = {};
             // By construction, this list is sorted by line, so we can perform a lower bound
             // binary search to find the nearest one.
-            if (widget->diff_blocks.size == 0)
+            if (blocks->size == 0)
                 return result;
             // We can binary search for the line, but we need the lower bound to capture the first instance of
             // first_l.
             uint64_t low = 0;
-            uint64_t high = widget->diff_blocks.size;
+            uint64_t high = blocks->size;
             uint64_t mid = 0;
             while (low < high)
             {
                 mid = low + ((high - low) / 2);
-                if (first_l <= widget->diff_blocks.blocks[mid].v_line)
+                if (first_l <= blocks->blocks[mid].v_line)
                 {
                     high = mid;
                 }
@@ -81,18 +87,90 @@ namespace Diff
             }
             // Finding the upperbound can be a simple linear search from here since since
             // the number of blocks should be relatively small.
-            result.first = &widget->diff_blocks.blocks[low];
-            result.last = widget->diff_blocks.blocks + widget->diff_blocks.size;
-            for (uint64_t i = low + 1; i < widget->diff_blocks.size; ++i)
+            result.first = &blocks->blocks[low];
+            result.last = blocks->blocks + blocks->size;
+            // Note: We start at 'low' to catch the case when v_line is actually > than first_l
+            // (which would result in an empty range, as expected).
+            for (uint64_t i = low; i < blocks->size; ++i)
             {
-                if (widget->diff_blocks.blocks[i].v_line > last_l)
+                if (blocks->blocks[i].v_line > last_l)
                 {
-                    result.last = &widget->diff_blocks.blocks[i];
+                    result.last = &blocks->blocks[i];
                     break;
                 }
             }
             return result;
+        }
 
+        // This is a non-atomic version of the circular queue.
+        struct CircularDiffWindow
+        {
+            uint64_t* idx_buf;
+            uint64_t cap;
+            uint64_t read;
+            uint64_t write;
+        };
+
+        CircularDiffWindow make_circular_window(Arena::Arena* arena, uint64_t cap_hint)
+        {
+            CircularDiffWindow result = {};
+            // This needs to be a power of 2 for index masking later.
+            uint64_t pow_2_aligned_size = up_pow2(cap_hint);
+            result.cap = pow_2_aligned_size;
+            result.idx_buf = Arena::push_array<uint64_t>(arena, result.cap);
+            result.read = result.write = 0;
+            return result;
+        }
+
+        uint64_t circular_window_mask(uint64_t idx, uint64_t cap)
+        {
+            return idx & (cap - 1);
+        }
+
+        void circular_window_reset(CircularDiffWindow* window)
+        {
+            window->read = window->write = 0;
+        }
+
+        uint64_t circular_window_size(const CircularDiffWindow& window)
+        {
+            return window.write - window.read;
+        }
+
+        void circular_window_push(CircularDiffWindow* window, uint64_t idx)
+        {
+            // Move the read head forward to chop the end if this insert would reach capacity.
+            window->read += circular_window_size(*window) + 1 >= window->cap;
+            window->idx_buf[circular_window_mask(window->write, window->cap)] = idx;
+            window->write += 1;
+        }
+
+        uint64_t circular_window_begin(const CircularDiffWindow& window)
+        {
+            return window.read;
+        }
+
+        uint64_t circular_window_end(const CircularDiffWindow& window)
+        {
+            return window.write;
+        }
+
+        uint64_t circular_window_fetch(const CircularDiffWindow& window, uint64_t idx)
+        {
+            return window.idx_buf[circular_window_mask(idx, window.cap)];
+        }
+
+        MergedDiffView join_merged_line_list(Arena::Arena* arena, const MergedLineList& lst)
+        {
+            MergedDiffView result = {};
+            result.size = lst.count;
+            result.lines = Arena::push_array_no_zero<MergedLine>(arena, result.size);
+            uint64_t idx = 0;
+            for EachNode(n, lst.first)
+            {
+                result.lines[idx++] = n->line;
+            }
+            return result;
         }
     } // namespace [anon]
 
@@ -104,12 +182,14 @@ namespace Diff
         widget->arena = arena;
         widget->diff_arena = Arena::alloc(Arena::default_params);
         widget->fine_diff_arena = Arena::alloc(Arena::default_params);
+        widget->ctx_diff_arena = Arena::alloc(Arena::default_params);
         // We need to do gross C++ here.
         {
             uint8_t* blob = Arena::push_array_no_zero_aligned<uint8_t>(arena,
                                                                 sizeof(UI::Widgets::IndexedScrollBox),
                                                                 Arena::Alignment{ alignof(UI::Widgets::IndexedScrollBox) });
             widget->scroll = new(blob) UI::Widgets::IndexedScrollBox{ id };
+            widget->scroll->scroll_to({});
         }
         widget->base_pos = Arena::pos(arena);
         widget->atlas = atlas;
@@ -125,6 +205,7 @@ namespace Diff
 
         Arena::release(widget->diff_arena);
         Arena::release(widget->fine_diff_arena);
+        Arena::release(widget->ctx_diff_arena);
         Arena::Arena* arena = widget->arena;
         Arena::release(arena);
     }
@@ -139,48 +220,46 @@ namespace Diff
     void populate_text(DiffTextView* widget, const TextFile& text)
     {
         // If we populate text, we should remove the existing diffs as well.
+        widget->full_diffs = {};
+        widget->full_diff_blocks = {};
         widget->diffs = {};
         widget->diff_blocks = {};
         Arena::clear(widget->diff_arena);
         Arena::clear(widget->fine_diff_arena);
+        Arena::clear(widget->ctx_diff_arena);
         // Copy the text file into our widget arena.
         Arena::pop_to(widget->arena, widget->base_pos);
         widget->text = text_file_copy_to(widget->arena, text);
         // Find the longest line.
         widget->longest_line = 0;
+        widget->max_line = widget->text.line_starts.size;
         for EachIndex(l, widget->text.line_starts.size)
         {
             // Note: CursorLine is 1-indexed.
             String8 txt = text_file_line_text(widget->text, Editor::CursorLine{ l + 1 });
             widget->longest_line = std::max(widget->longest_line, txt.size);
         }
-        widget->scroll->scroll_to({});
     }
 
     void populate_line_diff(DiffTextView* widget, MergedLineList lst)
     {
-        widget->diffs = {};
+        widget->full_diffs = {};
         Arena::clear(widget->diff_arena);
-        widget->diffs.size = lst.count;
-        widget->diffs.lines = Arena::push_array_no_zero<MergedLine>(widget->diff_arena, widget->diffs.size);
-        uint64_t idx = 0;
-        for EachNode(n, lst.first)
-        {
-            widget->diffs.lines[idx++] = n->line;
-        }
+        widget->full_diffs = join_merged_line_list(widget->diff_arena, lst);
+        widget->diffs = widget->full_diffs;
     }
 
     void populate_text_blocks_diff(DiffTextView* widget, MergedTextList lst)
     {
-        widget->diff_blocks = {};
+        widget->full_diff_blocks = {};
         Arena::clear(widget->fine_diff_arena);
-        widget->diff_blocks.size = lst.count;
-        widget->diff_blocks.blocks = Arena::push_array_no_zero<MergedText>(widget->fine_diff_arena, widget->diff_blocks.size);
+        widget->full_diff_blocks.size = lst.count;
+        widget->full_diff_blocks.blocks = Arena::push_array_no_zero<MergedText>(widget->fine_diff_arena, widget->full_diff_blocks.size);
         uint64_t idx = 0;
         Editor::CursorLine prev_line = {};
         for EachNode(n, lst.first)
         {
-            MergedText* merged = &widget->diff_blocks.blocks[idx++];
+            MergedText* merged = &widget->full_diff_blocks.blocks[idx++];
             *merged = n->merged;
             // Compute the line.
             // We save a lot of time by precomputing this because line lookup by offset is more expensive,
@@ -189,6 +268,8 @@ namespace Diff
             assert(prev_line <= merged->line);
             prev_line = merged->line;
         }
+        // Set these to be equivalent until we involve the context window.
+        widget->diff_blocks = widget->full_diff_blocks;
     }
 
     void share_scroll_pos(DiffTextView* widget, const DiffTextView* share_from)
@@ -197,6 +278,157 @@ namespace Diff
         UI::Widgets::IndexedScrollContentSize size_target = widget->scroll->content_size();
         off.offset.x = std::min(off.offset.x, size_target.entry_size.x);
         widget->scroll->scroll_to(off);
+    }
+
+    void apply_context_window(DiffTextView* widget)
+    {
+        Arena::clear(widget->ctx_diff_arena);
+        int context = Config::diff_state().context_window;
+        // Negative context window implies an infinitely wide window (no filtering).
+        if (context < 0)
+        {
+            widget->diffs = widget->full_diffs;
+            widget->diff_blocks = widget->full_diff_blocks;
+            return;
+        }
+        auto scratch = Arena::scratch_begin(Arena::no_conflicts);
+        MergedLineList trimmed_lines = {};
+        // These will stay the same, but we will end up mutating line offsets in here, which is
+        // why we need to copy it.
+        widget->diff_blocks.size = widget->full_diff_blocks.size;
+        widget->diff_blocks.blocks = Arena::push_array_no_zero<MergedText>(widget->ctx_diff_arena, widget->diff_blocks.size);
+        memcpy(widget->diff_blocks.blocks, widget->full_diff_blocks.blocks, sizeof(MergedText) * widget->diff_blocks.size);
+        // Our goal is to create 'context' lines before and after each diff line.  These context
+        // lines correspond to EditType::Eq.
+        // We need this because context windows can overlap.  To account for this, we make our circular window
+        // twice as large which catches the cases where this overlap can happen between two diff regions.
+        uint64_t context2 = context * 2;
+        CircularDiffWindow cw = make_circular_window(scratch.arena, context2);
+        constexpr uint64_t block_sentinel = uint64_t(-1);
+        uint64_t prev_block = block_sentinel;
+        for EachIndex(i, widget->full_diffs.size)
+        {
+            const MergedLine* line = &widget->full_diffs.lines[i];
+            uint64_t cw_size = circular_window_size(cw);
+            bool in_block = line->type != EditType::Eq;
+            if (not in_block)
+            {
+                circular_window_push(&cw, i);
+            }
+            else if (cw_size != 0)
+            {
+                uint64_t blk_dist = prev_block != block_sentinel
+                                    ? i - prev_block - 1
+                                    : i + 1;
+                // We don't need to trim, just take everything.
+                if (blk_dist <= context2)
+                {
+                    uint64_t first = circular_window_begin(cw);
+                    uint64_t last = circular_window_end(cw);
+                    for (;first != last; ++first)
+                    {
+                        MergedLine l = widget->full_diffs.lines[circular_window_fetch(cw, first)];
+                        l.v_line = trimmed_lines.count;
+                        assert(l.type == EditType::Eq);
+                        push_merge_line(scratch.arena, &trimmed_lines, l);
+                    }
+                }
+                else
+                {
+                    // Take indices from the previous block first.
+                    // This only happens once but... meh.
+                    if (prev_block != block_sentinel)
+                    {
+                        for (uint64_t ctx_blk = prev_block + 1; ctx_blk <= prev_block + context; ++ctx_blk)
+                        {
+                            MergedLine l = widget->full_diffs.lines[ctx_blk];
+                            l.v_line = trimmed_lines.count;
+                            assert(l.type == EditType::Eq);
+                            push_merge_line(scratch.arena, &trimmed_lines, l);
+                        }
+                    }
+                    // Add a separator line which tell us this was a skip.
+                    {
+                        MergedLine sep = {
+                            .first = Editor::CharOffset::Sentinel,
+                            .last = Editor::CharOffset::Sentinel,
+                            .v_line = trimmed_lines.count,
+                            .line = Editor::CursorLine::Beginning,
+                            .type = EditType::Skip,
+                        };
+                        push_merge_line(scratch.arena, &trimmed_lines, sep);
+                    }
+                    uint64_t last = circular_window_end(cw);
+                    // We want to start from the slot where the context is above our lines.
+                    uint64_t first = last - uint64_t(context);
+                    for (;first != last; ++first)
+                    {
+                        MergedLine l = widget->full_diffs.lines[circular_window_fetch(cw, first)];
+                        l.v_line = trimmed_lines.count;
+                        assert(l.type == EditType::Eq);
+                        push_merge_line(scratch.arena, &trimmed_lines, l);
+                    }
+                }
+                // Clear the circular buffer.
+                circular_window_reset(&cw);
+                prev_block = i;
+            }
+            else
+            {
+                prev_block = i;
+            }
+
+            if (in_block)
+            {
+                MergedLine l = *line;
+                l.v_line = trimmed_lines.count;
+                push_merge_line(scratch.arena, &trimmed_lines, l);
+                // Now we need to adjust any blocks associated with this line.
+                // There's a nice invariant here.  Since we're only removing lines, the v_line will
+                // only ever get smaller, which means that our binary search for visual lines in the
+                // new buffer will still work.  Let's use that and then adjust the v_line to match
+                // that of the line we just inserted above.
+                MergedTextBlocksView merged_view = merged_text_blocks_for_view(&widget->diff_blocks, line->v_line, line->v_line);
+                for (; merged_view.first != merged_view.last; ++merged_view.first)
+                {
+                    merged_view.first->v_line = l.v_line;
+                }
+            }
+        }
+
+        // A cleanup step to add more context to the bottom.
+        if (prev_block != block_sentinel)
+        {
+            for (uint64_t ctx_blk = prev_block + 1; ctx_blk <= prev_block + context and ctx_blk < widget->full_diffs.size; ++ctx_blk)
+            {
+                MergedLine l = widget->full_diffs.lines[ctx_blk];
+                l.v_line = trimmed_lines.count;
+                assert(l.type == EditType::Eq);
+                push_merge_line(scratch.arena, &trimmed_lines, l);
+            }
+        }
+        // Collapse the list into an array.
+        widget->diffs = join_merged_line_list(widget->ctx_diff_arena, trimmed_lines);
+        Arena::scratch_end(scratch);
+    }
+
+    // Helpers.
+    MergedLineNode* push_merge_line(Arena::Arena* arena, MergedLineList* lst, MergedLine line)
+    {
+        MergedLineNode* node = Arena::push_array<MergedLineNode>(arena, 1);
+        node->line = line;
+        SLLQueuePush(lst->first, lst->last, node);
+        ++lst->count;
+        return node;
+    }
+
+    MergedTextNode* push_merged_text(Arena::Arena* arena, MergedTextList* lst, MergedText merged)
+    {
+        MergedTextNode* node = Arena::push_array<MergedTextNode>(arena, 1);
+        node->merged = merged;
+        SLLQueuePush(lst->first, lst->last, node);
+        ++lst->count;
+        return node;
     }
 
     // Building.
@@ -320,6 +552,7 @@ namespace Diff
                 colors.ins_line,                // EditType::Ins
                 colors.eq_line,                 // EditType::Eq
                 colors.gap_line,                // EditType::Invalid
+                colors.trimmed_text,            // EditType::Skip
             };
 
             Vec4f colors_txt_map[] =
@@ -328,6 +561,7 @@ namespace Diff
                 colors.ins_txt,                // EditType::Ins
                 colors.eq_txt,                 // EditType::Eq
                 colors.gap_line,               // EditType::Invalid
+                colors.trimmed_text,           // EditType::Skip
             };
             Vec4f color;
 
@@ -354,10 +588,10 @@ namespace Diff
             CmdBuffer::start_glyph_run(lst, Render::VertShader::OneOneTransform);
             if (Config::diff_state().show_line_numbers)
             {
-                const uint64_t max_digits = digits(widget->diffs.size);
+                const uint64_t max_digits = digits(widget->max_line);
                 constexpr char target_string[] = "999999999.";
                 char line_num_buf[std::size(target_string)];
-                String8 line_num = fmt_string(line_num_buf, "%I64d.", widget->diffs.size);
+                String8 line_num = fmt_string(line_num_buf, "%I64d.", widget->max_line);
                 // Measure this because it will serve as the basis to left-align all the others.
                 Vec2f size = font_ctx.measure_text(line_num);
                 // Note: we add +1 to 'max_digits' here because we need to factor in the size of each mono-space
@@ -383,7 +617,7 @@ namespace Diff
                 {
                     // Pull the actual line number out, if there is one.
                     MergedLine line = widget->diffs.lines[first_line];
-                    if (line.type != EditType::Invalid)
+                    if (line.type != EditType::Invalid and line.type != EditType::Skip)
                     {
                         pos = line_num_pos;
                         pos.x += table[digits(rep(line.line)) - 1];
@@ -402,7 +636,7 @@ namespace Diff
             }
 
             CmdBuffer::start_shapes(lst, Render::VertShader::OneOneTransform);
-            MergedTextBlocksView merged_blocks_view = merged_text_blocks_for_view(widget, first, last);
+            MergedTextBlocksView merged_blocks_view = merged_text_blocks_for_view(&widget->diff_blocks, first, last);
             // Iterate the more fine-diff highlights.
             for (; merged_blocks_view.first != merged_blocks_view.last; ++merged_blocks_view.first)
             {
@@ -445,6 +679,7 @@ namespace Diff
                     txt = str8_substr(widget->text.content, { .off = rep(l.first), .len = rep(distance(l.first, l.last)) });
                     break;
                 case EditType::Invalid:
+                case EditType::Skip:
                     break;
                 }
                 font_ctx.render_text(lst, txt, pos, colors.eq_txt);

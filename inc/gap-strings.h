@@ -127,6 +127,7 @@ String8 str8_fmt_va(Arena::Arena* arena, const char* fmt, va_list lst);
 
 // Conversions.
 uint64_t u64_from_str8(String8 string, uint32_t radix);
+int64_t s64_from_str8(String8 string, uint32_t radix);
 bool str8_is_integer(String8 string, uint32_t radix);
 bool try_f64_from_str8(String8 string, double* result);
 bool try_f64_from_str8_hex_float(String8 string, double* result);

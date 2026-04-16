@@ -71,6 +71,9 @@ namespace Diff
         enum class PanelButtons
         {
             SwapDiffs,
+            LowerCtxWindow,
+            CtxWindow,
+            ExpandCtxWindow,
             Count
         };
     } // namespace [anon]
@@ -127,24 +130,6 @@ namespace Diff
     void file_B(DiffPanel* panel, const TextFile& file)
     {
         populate_text(panel->B.view, file);
-    }
-
-    MergedLineNode* push_merge_line(Arena::Arena* arena, MergedLineList* lst, MergedLine line)
-    {
-        MergedLineNode* node = Arena::push_array<MergedLineNode>(arena, 1);
-        node->line = line;
-        SLLQueuePush(lst->first, lst->last, node);
-        ++lst->count;
-        return node;
-    }
-
-    MergedTextNode* push_merged_text(Arena::Arena* arena, MergedTextList* lst, MergedText merged)
-    {
-        MergedTextNode* node = Arena::push_array<MergedTextNode>(arena, 1);
-        node->merged = merged;
-        SLLQueuePush(lst->first, lst->last, node);
-        ++lst->count;
-        return node;
     }
 
     struct OffsetVisualLine
@@ -511,17 +496,28 @@ namespace Diff
         String8 msg = str8_fmt(scratch.arena, "Diff computed in %ums", sw.to_ms());
         feed->queue_info(msg);
         Arena::scratch_end(scratch);
+
+        // Finally, apply our context window.
+        apply_context_window(panel->A.view);
+        apply_context_window(panel->B.view);
+    }
+
+    void sync_config(DiffPanel* panel)
+    {
+        apply_context_window(panel->A.view);
+        apply_context_window(panel->B.view);
     }
 
     // Building.
-    void build_diff_panel(DiffPanel* panel,
-                            CmdBuffer::CmdList* cmd_lst,
-                            CmdBuffer::DrawList* core_lst,
-                            UI::UIState* state,
-                            Feed::MessageFeed* feed)
+    DiffPanelResponse build_diff_panel(DiffPanel* panel,
+                                        CmdBuffer::CmdList* cmd_lst,
+                                        CmdBuffer::DrawList* core_lst,
+                                        UI::UIState* state,
+                                        Feed::MessageFeed* feed)
     {
         PROF_SCOPE();
 
+        DiffPanelResponse resp = {};
         auto clip = CmdBuffer::current_clip(*core_lst);
         const auto& colors = Config::widget_colors();
 
@@ -547,11 +543,17 @@ namespace Diff
                 UI::Widgets::ID btn_ids[] = 
                 {
                     UI::Widgets::make_id_seed(panel->id, "swap-diffs"),
+                    UI::Widgets::make_id_seed(panel->id, "ctx-wnd-dwn"),
+                    UI::Widgets::make_id_seed(panel->id, "ctx-wnd-val"),
+                    UI::Widgets::make_id_seed(panel->id, "ctx-wnd-up"),
                 };
 
                 constexpr String8View btn_tips[] =
                 {
                     str8_literal("Swap files"),
+                    str8_literal("Lower context window"),
+                    str8_literal("Context window"),
+                    str8_literal("Expand context window"),
                 };
 
                 UI::Widgets::BuildIconicButtonInput btns[] =
@@ -562,17 +564,65 @@ namespace Diff
                         .padding = { PartitionPanel::padding },
                         .thickness = PartitionPanel::padding,
                     },
+                    {
+                        .id = btn_ids[rep(PanelButtons::LowerCtxWindow)],
+                        .icon = Glyph::SpecialGlyph::Minus,
+                        .padding = { PartitionPanel::padding },
+                        .thickness = PartitionPanel::padding,
+                    },
+                    {
+                        .id = btn_ids[rep(PanelButtons::CtxWindow)],
+                        .icon = Glyph::SpecialGlyph::Trash,
+                        .padding = { PartitionPanel::padding },
+                        .thickness = PartitionPanel::padding,
+                    },
+                    {
+                        .id = btn_ids[rep(PanelButtons::ExpandCtxWindow)],
+                        .icon = Glyph::SpecialGlyph::Plus,
+                        .padding = { PartitionPanel::padding },
+                        .thickness = PartitionPanel::padding,
+                    },
                 };
                 static_assert(std::size(btn_ids) == count_of<PanelButtons>);
                 static_assert(std::size(btn_tips) == count_of<PanelButtons>);
                 static_assert(std::size(btns) == count_of<PanelButtons>);
 
+                auto scratch = Arena::scratch_begin(Arena::no_conflicts);
+                // Let's just hack in the context window button a bit.  The ID and position
+                // will stay the same but we need to generate a nice looking label for it.
+                int ctx_window = Config::diff_state().context_window;
+                const char* fmt_str[] =
+                {
+                    "%d",      // ctx_window >= 0
+                    "Infinite" // ctx_window < 0
+                };
+                String8 ctx_window_txt = str8_fmt(scratch.arena, fmt_str[ctx_window < 0], ctx_window);
+                UI::Widgets::BuildButtonInput ctx_wnd_btn_in =
+                {
+                    .id = btns[rep(PanelButtons::CtxWindow)].id,
+                    .label = sv_str8(ctx_window_txt),
+                    .padding = btns[rep(PanelButtons::CtxWindow)].padding,
+                    .thickness = btns[rep(PanelButtons::CtxWindow)].thickness,
+                };
+
                 // Find out the total width of the buttons.
                 float btn_width = 0.f;
+                Vec2f ideal_btn;
                 for EachIndex(i, count_of<PanelButtons>)
                 {
-                    auto btn_size = UI::Widgets::measure_iconic_button(&font_ctx, btns[i]);
-                    btn_width += btn_size.x + PartitionPanel::padding;
+                    if (i == rep(PanelButtons::CtxWindow))
+                    {
+                        auto btn_size = UI::Widgets::measure_button(&font_ctx, ctx_wnd_btn_in);
+                        btn_width += btn_size.x;
+                        // Note: Does not contribute to ideal button sizes.
+                    }
+                    else
+                    {
+                        auto btn_size = UI::Widgets::measure_iconic_button(&font_ctx, btns[i]);
+                        btn_width += btn_size.x + PartitionPanel::padding;
+                        ideal_btn.x = std::max(btn_size.x, ideal_btn.x);
+                        ideal_btn.y = std::max(btn_size.y, ideal_btn.y);
+                    }
                 }
                 // Center.
                 Vec2f btn_pos = base_pos;
@@ -582,8 +632,20 @@ namespace Diff
                 for EachIndex(i, count_of<PanelButtons>)
                 {
                     btns[i].pos = btn_pos;
-                    auto btn_resp = UI::Widgets::basic_iconic_button(panel->frame_lst, state, &font_ctx, btns[i], UI::Widgets::BuildButtonFlags::None);
-                    btn_pos.x += btn_resp.btn_size.x;
+                    btns[i].forced_size = ideal_btn;
+                    bool clicked = false;
+                    if (i == rep(PanelButtons::CtxWindow))
+                    {
+                        ctx_wnd_btn_in.pos = btn_pos;
+                        auto btn_resp = UI::Widgets::basic_button(panel->frame_lst, state, &font_ctx, ctx_wnd_btn_in, UI::Widgets::BuildButtonFlags::None);
+                        btn_pos.x += btn_resp.btn_size.x;
+                    }
+                    else
+                    {
+                        auto btn_resp = UI::Widgets::basic_iconic_button(panel->frame_lst, state, &font_ctx, btns[i], UI::Widgets::BuildButtonFlags::None);
+                        clicked = btn_resp.clicked;
+                        btn_pos.x += btn_resp.btn_size.x;
+                    }
                     // Place tooltips.
                     if (not state->tooltip.enabled and UI::hot_widget_set(*state, btn_ids[i]))
                     {
@@ -595,26 +657,43 @@ namespace Diff
                         UI::Widgets::basic_text_tooltip(state, core_lst, &font_ctx, tip_in);
                     }
                     // Process click.
-                    if (btn_resp.clicked)
+                    if (clicked)
                     {
                         switch (PanelButtons(i))
                         {
                         case PanelButtons::SwapDiffs:
                             {
-                                auto scratch = Arena::scratch_begin(Arena::no_conflicts);
                                 // Copy the files out to the scratch, then repopulate them in the opposite order.
                                 TextFile new_B = text_file_copy_to(scratch.arena, *text_file(panel->A.view));
                                 TextFile new_A = text_file_copy_to(scratch.arena, *text_file(panel->B.view));
                                 file_A(panel, new_A);
                                 file_B(panel, new_B);
-                                Arena::scratch_end(scratch);
                                 // Free up the scratch arena so we can use it to populate diffs.
                                 apply_diff(panel, feed);
+                            }
+                            break;
+                        case PanelButtons::LowerCtxWindow:
+                            {
+                                auto cfg = Config::diff_state();
+                                // We only need, at most, a -1 to provide the infinite context behavior.
+                                cfg.context_window = std::max(-1, cfg.context_window - 1);
+                                Config::update(cfg);
+                                resp.updated_ctx_window = true;
+                            }
+                            break;
+                        case PanelButtons::ExpandCtxWindow:
+                            {
+                                auto cfg = Config::diff_state();
+                                // We only need, at most, a -1 to provide the infinite context behavior.
+                                cfg.context_window += 1;
+                                Config::update(cfg);
+                                resp.updated_ctx_window = true;
                             }
                             break;
                         }
                     }
                 }
+                Arena::scratch_end(scratch);
                 // Move down for next row.
                 base_pos.y -= UI::standard_font_padding(font_size);
             }
@@ -792,5 +871,6 @@ namespace Diff
         CmdBuffer::pop_color_palette(panel->frame_lst);
 
         CmdBuffer::push_draw_list(cmd_lst, panel->frame_lst);
+        return resp;
     }
 } // namespace Diff

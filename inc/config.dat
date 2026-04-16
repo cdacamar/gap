@@ -26,6 +26,7 @@ DAT_CAT_END()
 DAT_CAT_START(DiffState, diff_state, "Diff", "diff.state")
     DAT_FONTSIZE(diff_font_size,  int,  "Font size")
     DAT_TOGGLE(show_line_numbers, bool, "Show line numbers")
+    DAT_INT(context_window,       int,  "Context window (negative implies no context trimming)")
 DAT_CAT_END()
 
 DAT_CAT_START(FeedColors, feed_colors, "Feed", "feed.colors")

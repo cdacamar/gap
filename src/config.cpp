@@ -268,7 +268,7 @@ namespace Config
             .del_txt                    = hex_to_vec4f(0xFF00007E),
             .ins_txt                    = hex_to_vec4f(0x00FF007E),
             .eq_txt                     = hex_to_vec4f(0xFFFFFFFF),
-            .trimmed_text               = hex_to_vec4f(0xE3811CFF),
+            .trimmed_text               = hex_to_vec4f(0xE3811C7E),
             .del_mark                   = hex_to_vec4f(0xFF0000FF),
             .ins_mark                   = hex_to_vec4f(0x00FF00FF),
         };
@@ -281,6 +281,8 @@ namespace Config
         DiffState diff_state_instance =
         {
             .diff_font_size = 14,
+            .show_line_numbers = true,
+            .context_window = 3, // This is the default for Linux diff... so...
         };
 
         FeedColors feed_colors_instance =
@@ -487,7 +489,7 @@ namespace Config
         {
             if (TinyToml::any_integral(msg))
             {
-                *reinterpret_cast<int*>(i) = static_cast<int>(TinyToml::integral_val(msg));
+                *reinterpret_cast<int*>(i) = static_cast<int>(TinyToml::signed_integral_val(msg));
             }
         }
 

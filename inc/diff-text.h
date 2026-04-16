@@ -81,6 +81,11 @@ namespace Diff
     void populate_line_diff(DiffTextView* widget, MergedLineList lst);
     void populate_text_blocks_diff(DiffTextView* widget, MergedTextList lst);
     void share_scroll_pos(DiffTextView* widget, const DiffTextView* share_from);
+    void apply_context_window(DiffTextView* widget);
+
+    // Helpers.
+    MergedTextNode* push_merged_text(Arena::Arena* arena, MergedTextList* lst, MergedText merged);
+    MergedLineNode* push_merge_line(Arena::Arena* arena, MergedLineList* lst, MergedLine line);
 
     // Queries.
     TextFile* text_file(DiffTextView* widget);

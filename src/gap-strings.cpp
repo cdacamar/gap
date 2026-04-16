@@ -225,6 +225,27 @@ uint64_t u64_from_str8(String8 string, uint32_t radix)
     return x;
 }
 
+int64_t s64_from_str8(String8 string, uint32_t radix)
+{
+    // Count signs and eat them.
+    uint64_t sign_count = 0;
+    uint64_t off = 0;
+    for (; off < string.size; ++off)
+    {
+        if (string.str[off] == '-')
+        {
+            ++sign_count;
+        }
+        else if (string.str[off] != '+')
+        {
+            break;
+        }
+    }
+    int64_t sign = (sign_count & 1) ? -1 : 1;
+    int64_t result = static_cast<int64_t>(u64_from_str8(str8_substr(string, { .off = off }), radix));
+    return result * sign;
+}
+
 bool str8_is_integer(String8 string, uint32_t radix)
 {
     if (string.size == 0)

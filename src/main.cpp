@@ -154,6 +154,7 @@ void notify_config_update(NotifyConfigExplorer notify_explorer, RenderCoreData* 
     render_data->atlas->sync_config();
     render_data->help->sync_config();
     render_data->arena_report->sync_config();
+    Diff::sync_config(render_data->diff_panel);
 
     if (is_yes(notify_explorer))
     {
@@ -704,7 +705,11 @@ void render_core(RenderCoreData* data)
 
     // Build viewer last because widgets are layered on top.
     {
-        Diff::build_diff_panel(data->diff_panel, data->cmd_lst, data->core_draw_lst, data->ui_state, data->feed);
+        auto resp = Diff::build_diff_panel(data->diff_panel, data->cmd_lst, data->core_draw_lst, data->ui_state, data->feed);
+        if (resp.updated_ctx_window)
+        {
+            notify_config_update(NotifyConfigExplorer::Yes, data);
+        }
     }
 
     // Special overlay for hotkey binding.

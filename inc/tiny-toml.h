@@ -237,6 +237,7 @@ namespace TinyToml
     String8 key_val(Arena::Arena* arena, ParseMsg* msg);
     String8 string_val(ParseMsg* msg);
     uint64_t integral_val(ParseMsg* msg);
+    int64_t signed_integral_val(ParseMsg* msg);
     bool boolean_val(ParseMsg* msg);
     Locus locus(const Cursor& cursor);
     String8View err_kind_string(ErrorInternal::Kind k);

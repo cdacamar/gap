@@ -29,6 +29,7 @@ namespace Diff
         Ins,
         Eq,
         Invalid,
+        Skip,
         Count
     };
 

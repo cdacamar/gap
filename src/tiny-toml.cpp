@@ -1113,6 +1113,23 @@ namespace TinyToml
         return 0;
     }
 
+    int64_t signed_integral_val(ParseMsg* msg)
+    {
+        assert(any_integral(msg));
+        switch (msg->kind)
+        {
+        case ParseMsg::Kind::Decimal:
+            return s64_from_str8(msg->decimal.number, 10);
+        case ParseMsg::Kind::DecimalHex:
+            return s64_from_str8(msg->decimal.number, 16);
+        case ParseMsg::Kind::DecimalOct:
+            return s64_from_str8(msg->decimal.number, 8);
+        case ParseMsg::Kind::DecimalBin:
+            return s64_from_str8(msg->decimal.number, 2);
+        }
+        return 0;
+    }
+
     bool boolean_val(ParseMsg* msg)
     {
         assert(any_boolean(msg));
