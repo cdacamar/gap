@@ -457,6 +457,8 @@ namespace Diff
             assert(x == find_r.end.x and y == find_r.end.y);
         }
 
+        // Inspiration for this implementation: https://gist.github.com/jcoglan/4e364e98ced2189641c372eb2d92caac
+        // Article at: https://blog.jcoglan.com/2017/04/25/myers-diff-in-linear-space-implementation/
         void unified_diff_box(Arena::Arena* arena, const DiffInput* input, DiffBox box, EditList* lst)
         {
             // Add common prefixes up front.
