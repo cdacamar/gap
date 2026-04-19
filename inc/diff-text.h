@@ -9,10 +9,10 @@ namespace Diff
 {
     struct MergedLine
     {
-        Editor::CharOffset first; // First == sentinel implies gap line.
-        Editor::CharOffset last;
+        CharOffset first; // First == sentinel implies gap line.
+        CharOffset last;
         uint64_t v_line; // The visual line into the merged buffer.
-        Editor::CursorLine line; // Line for actual text.
+        CursorLine line; // Line for actual text.
         EditType type;
     };
 
@@ -37,10 +37,10 @@ namespace Diff
 
     struct MergedText
     {
-        Editor::CharOffset first;
-        Editor::CharOffset last;
+        CharOffset first;
+        CharOffset last;
         uint64_t v_line; // The visual line into the merged buffer.
-        Editor::CursorLine line; // Line for actual text.
+        CursorLine line; // Line for actual text.
         EditType type;
     };
 

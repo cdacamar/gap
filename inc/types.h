@@ -17,90 +17,14 @@ struct ScreenDimensions
 
 enum class FPS { };
 
-// For Graphics.
-struct OpaqueWindow
+namespace Diff
 {
-    void* value;
-};
-
-namespace Editor
-{
-    enum class ID : uint64_t
-    {
-        Anonymous = sentinel_for<ID>
-    };
-
-    enum class Column : uint64_t
-    {
-        Beginning
-    };
-
-    enum class Tabstop { };
-
-    enum class CursorLocus : uint64_t
-    {
-        Beginning,
-        SelectionSentinel = sentinel_for<CursorLocus>
-    };
-
-    enum class LineEndingMode : uint8_t
-    {
-        Auto,
-        CRLF,
-        LF
-    };
-
     enum class Length : uint64_t { };
-
-    constexpr CursorLocus operator+(CursorLocus a, CursorLocus b)
-    {
-        return CursorLocus{ rep(a) + rep(b) };
-    }
-
-    constexpr CursorLocus operator+(CursorLocus l, PrimitiveType<CursorLocus> off)
-    {
-        return l + CursorLocus{ off };
-    }
-
-    constexpr CursorLocus operator+(CursorLocus l, Length len)
-    {
-        return l + CursorLocus{ rep(len) };
-    }
-
-    constexpr Length distance(CursorLocus first, CursorLocus last)
-    {
-        return Length{ rep(last) - rep(first) };
-    }
 
     enum class CharOffset : uint64_t
     {
         Sentinel = sentinel_for<CharOffset>
     };
-
-    constexpr CursorLocus seek(CharOffset off, Column c = Column::Beginning)
-    {
-        return CursorLocus{ rep(off) + rep(c) };
-    }
-
-    constexpr CharOffset as_offset(CursorLocus locus)
-    {
-        return CharOffset{ rep(locus) };
-    }
-
-    constexpr CharOffset operator+(CharOffset off, Length len)
-    {
-        return CharOffset{ rep(off) + rep(len) };
-    }
-
-    constexpr Column col(CharOffset first, CharOffset last)
-    {
-        return Column{ rep(last) - rep(first) };
-    }
-
-    constexpr Column col(CharOffset first, CursorLocus cursor)
-    {
-        return col(first, CharOffset{ rep(cursor) });
-    }
 
     constexpr Length distance(CharOffset first, CharOffset last)
     {
@@ -117,85 +41,12 @@ namespace Editor
         return Length{ rep(lhs) - rep(rhs) };
     }
 
-    enum class EditSort
-    {
-        Insert,
-        Deletion
-    };
-
-    struct GenericEdit
-    {
-        CharOffset first;
-        union
-        {
-            Length len;      // EditSort::Insertion.
-            CharOffset last; // EditSort::Deletion.
-        };
-        EditSort sort;
-    };
-
-    // A set of edits to help move cursors when snapping to nodes.
-    struct EditCollection
-    {
-        GenericEdit* edits;
-        uint64_t size;
-    };
-
-    // A data structure meant to track edits made to an underlying buffer.
-    struct TrackedEdit
-    {
-        GenericEdit edit;
-        TrackedEdit* next;
-    };
-
-    struct TrackedEditList
-    {
-        TrackedEdit* first;
-        TrackedEdit* last;
-        uint64_t count;
-    };
-
     enum class CursorLine : uint64_t
     {
         IndexBeginning,
         Beginning
     };
-
-    struct SearchResult
-    {
-        CharOffset first;
-        CharOffset last;
-        CursorLine line;
-
-        bool operator==(const SearchResult&) const = default;
-    };
-
-    constexpr SearchResult nil_result = {
-        .first = CharOffset::Sentinel,
-        .last = CharOffset::Sentinel
-    };
-
-    struct CursorLineRange
-    {
-        CursorLine first;
-        CursorLine last;
-    };
-
-    enum class BufferChangeSort : uint8_t
-    {
-        None,
-        Complex,    // e.g. paste op or line movement.
-        Delete,     // e.g. backspace or word deletion.
-        SimpleChar, // e.g. entering a simple character sequence.
-    };
-
-    // Tells us whether or not a property is coming from a config value or something else.
-    enum class PropertyOriginFromConfig : bool
-    {
-        No,
-        Yes
-    };
-} // namespace Editor
+} // namespace Diff
 
 namespace Glyph
 {

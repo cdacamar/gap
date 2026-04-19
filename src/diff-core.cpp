@@ -53,7 +53,7 @@ namespace Diff
             struct StartNode
             {
                 StartNode* next;
-                Editor::CharOffset start;
+                CharOffset start;
             };
             StartNode* first = nullptr;
             StartNode* last = nullptr;
@@ -64,16 +64,16 @@ namespace Diff
                 if (result->content.str[i] == '\n')
                 {
                     StartNode* n = Arena::push_array<StartNode>(scratch.arena, 1);
-                    n->start = Editor::CharOffset{ i + 1 };
+                    n->start = CharOffset{ i + 1 };
                     SLLQueuePush(first, last, n);
                     ++count;
                 }
             }
             // Flatten.
             result->line_starts.size = count + 1;
-            result->line_starts.array = Arena::push_array_no_zero<Editor::CharOffset>(arena, result->line_starts.size);
+            result->line_starts.array = Arena::push_array_no_zero<CharOffset>(arena, result->line_starts.size);
             // First line.
-            result->line_starts.array[0] = Editor::CharOffset{};
+            result->line_starts.array[0] = CharOffset{};
             uint64_t idx = 1;
             for EachNode(n, first)
             {
@@ -105,8 +105,8 @@ namespace Diff
 
         bool same_line(const DiffInput* input, OffT line_a, OffT line_b)
         {
-            Editor::CursorLine l_a = Editor::CursorLine(line_a);
-            Editor::CursorLine l_b = Editor::CursorLine(line_b);
+            CursorLine l_a = CursorLine(line_a);
+            CursorLine l_b = CursorLine(line_b);
             String8 ltxt_a = text_file_line_text(*input->file_a, l_a);
             String8 ltxt_b = text_file_line_text(*input->file_b, l_b);
             return str8_match_exact(ltxt_a, ltxt_b);
@@ -116,8 +116,8 @@ namespace Diff
         {
             const TextFile* file_a = input->block_a->file;
             const TextFile* file_b = input->block_b->file;
-            Editor::CharOffset off_a = input->block_a->block.underlying_off[index_a];
-            Editor::CharOffset off_b = input->block_b->block.underlying_off[index_b];
+            CharOffset off_a = input->block_a->block.underlying_off[index_a];
+            CharOffset off_b = input->block_b->block.underlying_off[index_b];
             assert(rep(off_a) < file_a->content.size);
             assert(rep(off_b) < file_b->content.size);
             return file_a->content.str[rep(off_a)] == file_b->content.str[rep(off_b)];
@@ -529,18 +529,18 @@ namespace Diff
         return result;
     }
 
-    String8 text_file_line_text(const TextFile& file, Editor::CursorLine line)
+    String8 text_file_line_text(const TextFile& file, CursorLine line)
     {
         // This is outside the file.  Return empty string.
         // Note: Lines are 1-indexed.
         if (rep(line) - 1 >= file.line_starts.size)
             return str8_empty;
-        Editor::CharOffset start = file.line_starts.array[rep(line) - 1];
-        Editor::CharOffset end = start;
-        Editor::CursorLine next_l = extend(line);
+        CharOffset start = file.line_starts.array[rep(line) - 1];
+        CharOffset end = start;
+        CursorLine next_l = extend(line);
         if (rep(next_l) - 1 >= file.line_starts.size)
         {
-            end = Editor::CharOffset{ file.content.size };
+            end = CharOffset{ file.content.size };
         }
         else
         {
@@ -553,7 +553,7 @@ namespace Diff
         return substr;
     }
 
-    LineRange text_file_line_range(const TextFile& file, Editor::CursorLine line)
+    LineRange text_file_line_range(const TextFile& file, CursorLine line)
     {
         LineRange result = {};
         // This is outside the file.  Return empty range.
@@ -562,10 +562,10 @@ namespace Diff
             return result;
         result.first = file.line_starts.array[rep(line) - 1];
         result.last = result.first;
-        Editor::CursorLine next_l = extend(line);
+        CursorLine next_l = extend(line);
         if (rep(next_l) - 1 >= file.line_starts.size)
         {
-            result.last = Editor::CharOffset{ file.content.size };
+            result.last = CharOffset{ file.content.size };
         }
         else
         {
@@ -577,10 +577,10 @@ namespace Diff
         return result;
     }
 
-    Editor::CursorLine text_file_line_for_offset(const TextFile& file, Editor::CharOffset off)
+    CursorLine text_file_line_for_offset(const TextFile& file, CharOffset off)
     {
         if (file.line_starts.size <= 1)
-            return Editor::CursorLine::Beginning;
+            return CursorLine::Beginning;
         // We can binary search for the line.
         uint64_t low = 0;
         uint64_t high = file.line_starts.size - 1;
@@ -605,7 +605,7 @@ namespace Diff
                 break;
             }
         }
-        return Editor::CursorLine{ mid + 1 };
+        return CursorLine{ mid + 1 };
     }
 
     TextFile text_file_copy_to(Arena::Arena* arena, const TextFile& file)
@@ -614,8 +614,8 @@ namespace Diff
         result.path = str8_copy(arena, file.path);
         result.content = str8_copy(arena, file.content);
         result.line_starts.size = file.line_starts.size;
-        result.line_starts.array = Arena::push_array_no_zero<Editor::CharOffset>(arena, result.line_starts.size);
-        memcpy(result.line_starts.array, file.line_starts.array, result.line_starts.size * sizeof(Editor::CharOffset));
+        result.line_starts.array = Arena::push_array_no_zero<CharOffset>(arena, result.line_starts.size);
+        memcpy(result.line_starts.array, file.line_starts.array, result.line_starts.size * sizeof(CharOffset));
         return result;
     }
 

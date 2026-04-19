@@ -8,7 +8,7 @@ namespace Diff
 {
     struct LineStarts
     {
-        Editor::CharOffset* array;
+        CharOffset* array;
         uint64_t size;
     };
 
@@ -55,15 +55,15 @@ namespace Diff
 
     struct LineRange
     {
-        Editor::CharOffset first;
-        Editor::CharOffset last;
+        CharOffset first;
+        CharOffset last;
     };
 
     // This describes a block of text to diff.
     // underlying_off -- the offset into the buffer.  Indices into the array act as the window itself.
     struct DiffBlock
     {
-        Editor::CharOffset* underlying_off;
+        CharOffset* underlying_off;
         uint64_t size;
     };
 
@@ -75,8 +75,8 @@ namespace Diff
 
     struct DiffWord
     {
-        Editor::CharOffset first;
-        Editor::CharOffset last;
+        CharOffset first;
+        CharOffset last;
     };
 
     struct DiffWords
@@ -93,9 +93,9 @@ namespace Diff
 
     // Text files.
     TextFile text_file_read(Arena::Arena* arena, String8 path);
-    String8 text_file_line_text(const TextFile& file, Editor::CursorLine line);
-    LineRange text_file_line_range(const TextFile& file, Editor::CursorLine line);
-    Editor::CursorLine text_file_line_for_offset(const TextFile& file, Editor::CharOffset off);
+    String8 text_file_line_text(const TextFile& file, CursorLine line);
+    LineRange text_file_line_range(const TextFile& file, CursorLine line);
+    CursorLine text_file_line_for_offset(const TextFile& file, CharOffset off);
     TextFile text_file_copy_to(Arena::Arena* arena, const TextFile& file);
 
     // Diffing.

@@ -137,7 +137,7 @@ namespace Diff
 
     struct OffsetVisualLine
     {
-        Editor::CharOffset first;
+        CharOffset first;
         uint64_t v_line;
     };
 
@@ -147,7 +147,7 @@ namespace Diff
         uint64_t size;
     };
 
-    uint64_t v_line_for_offset(OffsetVisualLineMap* map, Editor::CharOffset off)
+    uint64_t v_line_for_offset(OffsetVisualLineMap* map, CharOffset off)
     {
         if (map->size == 0)
             return 0;
@@ -159,8 +159,8 @@ namespace Diff
             mid = low + ((high - low) / 2);
             if (mid == high)
                 break;
-            Editor::CharOffset mid_start = map->array[mid].first;
-            Editor::CharOffset mid_stop = map->array[mid + 1].first;
+            CharOffset mid_start = map->array[mid].first;
+            CharOffset mid_stop = map->array[mid + 1].first;
             if (off < mid_start)
             {
                 high = mid - 1;
@@ -214,8 +214,8 @@ namespace Diff
             block_b.block.size += rep(distance(n->line.first, n->line.last));
         }
         // Allocate.
-        block_a.block.underlying_off = Arena::push_array_no_zero<Editor::CharOffset>(arena, block_a.block.size);
-        block_b.block.underlying_off = Arena::push_array_no_zero<Editor::CharOffset>(arena, block_b.block.size);
+        block_a.block.underlying_off = Arena::push_array_no_zero<CharOffset>(arena, block_a.block.size);
+        block_b.block.underlying_off = Arena::push_array_no_zero<CharOffset>(arena, block_b.block.size);
         off_map_a.size = in.A.count;
         off_map_b.size = in.B.count;
         off_map_a.array = Arena::push_array_no_zero<OffsetVisualLine>(arena, off_map_a.size);
@@ -225,7 +225,7 @@ namespace Diff
         uint64_t idx_map = 0;
         for EachNode(n, in.A.first)
         {
-            for (Editor::CharOffset off = n->line.first; off < n->line.last; off = extend(off))
+            for (CharOffset off = n->line.first; off < n->line.last; off = extend(off))
             {
                 block_a.block.underlying_off[idx++] = off;
             }
@@ -236,7 +236,7 @@ namespace Diff
         idx_map = 0;
         for EachNode(n, in.B.first)
         {
-            for (Editor::CharOffset off = n->line.first; off < n->line.last; off = extend(off))
+            for (CharOffset off = n->line.first; off < n->line.last; off = extend(off))
             {
                 block_b.block.underlying_off[idx++] = off;
             }
@@ -421,7 +421,7 @@ namespace Diff
             word.first = n->line.first;
             // Seed.
             WordContext ctx = char_context(c);
-            for (Editor::CharOffset off = extend(n->line.first); off < n->line.last; off = extend(off))
+            for (CharOffset off = extend(n->line.first); off < n->line.last; off = extend(off))
             {
                 WordContext next_ctx = char_context(in.file_A->content.str[rep(off)]);
                 bool commit = false;
@@ -456,7 +456,7 @@ namespace Diff
             word.first = n->line.first;
             // Seed.
             WordContext ctx = char_context(c);
-            for (Editor::CharOffset off = extend(n->line.first); off < n->line.last; off = extend(off))
+            for (CharOffset off = extend(n->line.first); off < n->line.last; off = extend(off))
             {
                 WordContext next_ctx = char_context(in.file_B->content.str[rep(off)]);
                 bool commit = false;
@@ -650,20 +650,20 @@ namespace Diff
             case EditType::Del:
                 {
                     // Add delete from A.
-                    LineRange rng_a = text_file_line_range(*a, Editor::CursorLine(e->edit.idx_a));
+                    LineRange rng_a = text_file_line_range(*a, CursorLine(e->edit.idx_a));
                     MergedLine line_a = {
                         .first = rng_a.first,
                         .last = rng_a.last,
                         .v_line = lst_A.count,
-                        .line = Editor::CursorLine(e->edit.idx_a),
+                        .line = CursorLine(e->edit.idx_a),
                         .type = EditType::Del,
                     };
                     push_merge_line(scratch.arena, &lst_A, line_a);
                     MergedLine line_b = {
-                        .first = Editor::CharOffset::Sentinel,
-                        .last = Editor::CharOffset::Sentinel,
+                        .first = CharOffset::Sentinel,
+                        .last = CharOffset::Sentinel,
                         .v_line = lst_B.count,
-                        .line = Editor::CursorLine::Beginning,
+                        .line = CursorLine::Beginning,
                         .type = EditType::Invalid,
                     };
                     push_merge_line(scratch.arena, &lst_merge_B, line_b);
@@ -674,12 +674,12 @@ namespace Diff
             case EditType::Ins:
                 {
                     // Add insert from B.
-                    LineRange rng_b = text_file_line_range(*b, Editor::CursorLine(e->edit.idx_b));
+                    LineRange rng_b = text_file_line_range(*b, CursorLine(e->edit.idx_b));
                     MergedLine line_b = {
                         .first = rng_b.first,
                         .last = rng_b.last,
                         .v_line = lst_B.count,
-                        .line = Editor::CursorLine(e->edit.idx_b),
+                        .line = CursorLine(e->edit.idx_b),
                         .type = EditType::Ins,
                     };
                     // Try to pull from the merged list.  If we have one, we don't need to add
@@ -689,10 +689,10 @@ namespace Diff
                     {
                         node = push_merge_line(scratch.arena, &lst_B, line_b);
                         MergedLine line_a = {
-                            .first = Editor::CharOffset::Sentinel,
-                            .last = Editor::CharOffset::Sentinel,
+                            .first = CharOffset::Sentinel,
+                            .last = CharOffset::Sentinel,
                             .v_line = lst_A.count,
-                            .line = Editor::CursorLine::Beginning,
+                            .line = CursorLine::Beginning,
                             .type = EditType::Invalid,
                         };
                         push_merge_line(scratch.arena, &lst_A, line_a);
@@ -719,10 +719,10 @@ namespace Diff
                     {
                         // Add gap from B.
                         MergedLine line_b = {
-                            .first = Editor::CharOffset::Sentinel,
-                            .last = Editor::CharOffset::Sentinel,
+                            .first = CharOffset::Sentinel,
+                            .last = CharOffset::Sentinel,
                             .v_line = lst_B.count,
-                            .line = Editor::CursorLine::Beginning,
+                            .line = CursorLine::Beginning,
                             .type = EditType::Invalid,
                         };
                         // Insert B.
@@ -737,20 +737,20 @@ namespace Diff
                         node = lst_merge_B.first;
                     }
                     // Insert on both sides.
-                    LineRange rng_b = text_file_line_range(*b, Editor::CursorLine(e->edit.idx_b));
-                    LineRange rng_a = text_file_line_range(*a, Editor::CursorLine(e->edit.idx_a));
+                    LineRange rng_b = text_file_line_range(*b, CursorLine(e->edit.idx_b));
+                    LineRange rng_a = text_file_line_range(*a, CursorLine(e->edit.idx_a));
                     MergedLine line_a = {
                         .first = rng_a.first,
                         .last = rng_a.last,
                         .v_line = lst_A.count,
-                        .line = Editor::CursorLine(e->edit.idx_a),
+                        .line = CursorLine(e->edit.idx_a),
                         .type = EditType::Eq,
                     };
                     MergedLine line_b = {
                         .first = rng_b.first,
                         .last = rng_b.last,
                         .v_line = lst_B.count,
-                        .line = Editor::CursorLine(e->edit.idx_b),
+                        .line = CursorLine(e->edit.idx_b),
                         .type = EditType::Eq,
                     };
                     push_merge_line(scratch.arena, &lst_A, line_a);

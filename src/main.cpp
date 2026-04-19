@@ -544,7 +544,6 @@ void ui_end_frame(UIState* state)
     state->in_buf = str8_empty;
     state->in_mod_buf = str8_empty;
     state->new_suggestions = false;
-    state->buf_change_last_frame = Editor::BufferChangeSort::None;
     state->hotkeys.hk = Hotkey::None;
     state->hotkeys.cust_hk.id = CustomHotkeyID::None;
     // Tooltips need constant easing applied so when they are opened->closed->opened

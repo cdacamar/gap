@@ -236,7 +236,7 @@ namespace Diff
         for EachIndex(l, widget->text.line_starts.size)
         {
             // Note: CursorLine is 1-indexed.
-            String8 txt = text_file_line_text(widget->text, Editor::CursorLine{ l + 1 });
+            String8 txt = text_file_line_text(widget->text, CursorLine{ l + 1 });
             widget->longest_line = std::max(widget->longest_line, txt.size);
         }
     }
@@ -256,7 +256,7 @@ namespace Diff
         widget->full_diff_blocks.size = lst.count;
         widget->full_diff_blocks.blocks = Arena::push_array_no_zero<MergedText>(widget->fine_diff_arena, widget->full_diff_blocks.size);
         uint64_t idx = 0;
-        Editor::CursorLine prev_line = {};
+        CursorLine prev_line = {};
         for EachNode(n, lst.first)
         {
             MergedText* merged = &widget->full_diff_blocks.blocks[idx++];
@@ -352,10 +352,10 @@ namespace Diff
                     // Add a separator line which tell us this was a skip.
                     {
                         MergedLine sep = {
-                            .first = Editor::CharOffset::Sentinel,
-                            .last = Editor::CharOffset::Sentinel,
+                            .first = CharOffset::Sentinel,
+                            .last = CharOffset::Sentinel,
                             .v_line = trimmed_lines.count,
-                            .line = Editor::CursorLine::Beginning,
+                            .line = CursorLine::Beginning,
                             .type = EditType::Skip,
                         };
                         push_merge_line(scratch.arena, &trimmed_lines, sep);
@@ -530,9 +530,9 @@ namespace Diff
         if (widget->diffs.size == 0)
         {
             // Note: the scrollbox starts at offset 0, but CursorLine is 1-indexed.
-            Editor::CursorLine first = Editor::CursorLine(off.idx + 1);
-            Editor::CursorLine last = Editor::CursorLine{ rep(first) + (off.offset.y > 0.f) + lines_per_v };
-            last = std::clamp(last, first, Editor::CursorLine{ widget->text.line_starts.size });
+            CursorLine first = CursorLine(off.idx + 1);
+            CursorLine last = CursorLine{ rep(first) + (off.offset.y > 0.f) + lines_per_v };
+            last = std::clamp(last, first, CursorLine{ widget->text.line_starts.size });
 
             CmdBuffer::start_glyph_run(lst, Render::VertShader::OneOneTransform);
             for (; first <= last; first = extend(first))

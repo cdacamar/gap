@@ -9,7 +9,7 @@
 namespace UTF8
 {
     using Codepoint = uint32_t;
-    using Offset = Editor::CharOffset;
+    using Offset = Diff::CharOffset;
 
     struct EncodeInput
     {

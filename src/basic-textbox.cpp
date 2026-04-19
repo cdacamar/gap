@@ -11,13 +11,13 @@
 
 namespace UI::Widgets
 {
-    using CharOffset = Editor::CharOffset;
+    using CharOffset = Diff::CharOffset;
 
     namespace
     {
         using LineStarts = std::vector<CharOffset>;
 
-        void populate_line_starts(std::string_view text, LineStarts* line_starts, Editor::Length* longest_line)
+        void populate_line_starts(std::string_view text, LineStarts* line_starts, Diff::Length* longest_line)
         {
             line_starts->clear();
             line_starts->push_back(CharOffset{});
@@ -27,7 +27,7 @@ namespace UI::Widgets
                 if (text[i] == '\n')
                 {
                     // Compute longest line as well.
-                    Editor::Length line_len = distance(line_starts->back(), CharOffset{ i + 1 });
+                    Diff::Length line_len = distance(line_starts->back(), CharOffset{ i + 1 });
                     *longest_line = std::max(line_len, *longest_line);
                     line_starts->push_back(CharOffset{ i + 1 });
                 }
@@ -39,7 +39,7 @@ namespace UI::Widgets
     {
         std::string text;
         LineStarts line_starts;
-        Editor::Length longest_line = {};
+        Diff::Length longest_line = {};
         Vec2f offset;
         Glyph::FontSize font_size = Glyph::FontSize{ 18 };
     };

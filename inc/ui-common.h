@@ -122,7 +122,6 @@ namespace UI
         Arena::Arena* frame_arena{};      // Cleared on frame entry.
         Arena::Arena* post_frame_arena{}; // Cleared at the end of the frame.
         DragItem drag{};
-        Editor::BufferChangeSort buf_change_last_frame = Editor::BufferChangeSort::None; // Was there a buffer change last frame?
         OS::CursorStyle cursor = OS::CursorStyle::Default;
         OS::DropFileList dropped_files{};
         LastPathBuffer* last_path_buf{};
