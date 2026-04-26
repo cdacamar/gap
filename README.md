@@ -10,7 +10,7 @@ The goal of **gap** is to provide a very simple native utility which presents di
 The secondary goal of **gap** is to serve as a proof-of-concept for implementing the linear variant of the Myers diff algorithm for use in [fred](https://fred-dev.tech).
 
 ## Features
-* Self-contained repo.  There are no dependencies outside of a C++ compiler.
+* Self-contained repo.  There are no dependencies outside of a C++ compiler (some Linux caveats).
 * Multiple options for viewing inner-diffs within similar blocks (word-based and character-based).
 * Easily swap the order of diffs with a single button.
 * Expand/collapse context window at the push of a button (anything below 0 indicates 'infinite' context, implying there is no window).
@@ -55,6 +55,11 @@ $ build release
 
 Linux:
 1. Ensure you have a recent-ish version of gcc.  I used 13.3.0.
+2. Have the following system dependencies installed:
+    * OpenGL (I used libglx-dev)
+    * X11 (I used libx11-dev)
+    * X11-ext (I used libxext-dev)
+    * Xrandr (I used libxrandr-dev)
 ```
 $ ./build.sh
 ```
