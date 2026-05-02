@@ -1049,11 +1049,13 @@ namespace Diff
                         case PanelButtons::SwapDiffs:
                             {
                                 // Copy the files out to the scratch, then repopulate them in the opposite order.
-                                TextFile new_B = text_file_copy_to(scratch.arena, *text_file(panel->A.view));
-                                TextFile new_A = text_file_copy_to(scratch.arena, *text_file(panel->B.view));
+                                Arena::Temp tmp = Arena::temp_begin(scratch.arena);
+                                TextFile new_B = text_file_copy_to(tmp.arena, *text_file(panel->A.view));
+                                TextFile new_A = text_file_copy_to(tmp.arena, *text_file(panel->B.view));
                                 file_A(panel, new_A);
                                 file_B(panel, new_B);
                                 // Free up the scratch arena so we can use it to populate diffs.
+                                Arena::temp_end(tmp);
                                 apply_diff(panel, feed);
                             }
                             break;

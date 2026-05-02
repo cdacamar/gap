@@ -140,7 +140,7 @@ namespace Diff
         void circular_window_push(CircularDiffWindow* window, uint64_t idx)
         {
             // Move the read head forward to chop the end if this insert would reach capacity.
-            window->read += circular_window_size(*window) + 1 >= window->cap;
+            window->read += circular_window_size(*window) + 1 > window->cap;
             window->idx_buf[circular_window_mask(window->write, window->cap)] = idx;
             window->write += 1;
         }

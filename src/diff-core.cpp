@@ -1,5 +1,7 @@
 #include "diff-core.h"
 
+#include "os.h"
+
 namespace Diff
 {
     namespace
@@ -517,10 +519,11 @@ namespace Diff
     TextFile text_file_read(Arena::Arena* arena, String8 path)
     {
         TextFile result = {};
-        result.path = str8_copy(arena, path);
         if (read_entire_file(arena, &result.content, path))
         {
             text_file_populate_line_starts(arena, &result);
+            // Note: We _probably_ shouldn't ignore the error code here but... w/e.
+            OS::canonical_file_path(arena, &result.path, path);
         }
         else
         {
