@@ -622,17 +622,13 @@ namespace Diff
                 not null_dir_panel(child);
                 child = child->sib_next)
             {
-                // TODO.
-#if 0
                 CmdBuffer::ClipRect child_clip = clip_from_parent(clip, &panel->A, child);
-                const TextFile* file = text_file(child->view);
-                String8 name = file->path;
+                String8 name = diff_dir_list_view_base_dir(child->view);
                 CmdBuffer::start_glyph_run(panel->frame_lst, Render::VertShader::OneOneTransform);
                 Vec2f pos = base_pos;
                 pos.y -= font_ctx.current_font_line_height();
-                pos.x = rep(child_clip.offset_x) + (rep(child_clip.width) - font_ctx.measure_text(name).x) / 2.f;
+                pos.x = rep(child_clip.offset_x) - rep(clip.offset_x) + (rep(child_clip.width) - font_ctx.measure_text(name).x) / 2.f;
                 font_ctx.render_text(panel->frame_lst, name, pos, colors.window_title_font_color);
-#endif
             }
             // Replace the clip.
             clip.height = retract(clip.height, rep(header_clip.height));

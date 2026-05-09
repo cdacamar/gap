@@ -145,6 +145,11 @@ namespace Diff
     }
 
     // Queries.
+    String8 diff_dir_list_view_base_dir(DiffDirListView* widget)
+    {
+        return widget->files.base_dir;
+    }
+
     DirFileArray diff_dir_list_view_file_array(DiffDirListView* widget)
     {
         return widget->files;
@@ -316,7 +321,8 @@ namespace Diff
                     if (count.del != 0)
                     {
                         diff_txt = fmt_string(fmt_buf, "-%I64d", count.del);
-                        pos.x = num_pos.x + largest_ins_col_skip;
+                        pos = num_pos;
+                        pos.x += largest_ins_col_skip;
                         pos = font_ctx.render_text(lst, diff_txt, pos, colors.del_txt);
                     }
                     num_pos.y -= line_height;

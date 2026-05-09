@@ -89,6 +89,7 @@ namespace Diff
     void diff_dir_list_view_apply_diff_count_sidebar(DiffDirListView* widget, DiffCountArray counts);
 
     // Queries.
+    String8 diff_dir_list_view_base_dir(DiffDirListView* widget);
     DirFileArray diff_dir_list_view_file_array(DiffDirListView* widget);
     MergedFileArray diff_dir_list_view_merged_file_array(DiffDirListView* widget);
 
