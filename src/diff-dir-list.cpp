@@ -121,6 +121,11 @@ namespace Diff
         return widget->files;
     }
 
+    MergedFileArray diff_dir_list_view_merged_file_array(DiffDirListView* widget)
+    {
+        return widget->merged_files;
+    }
+
     // Building.
     DiffDirListViewResponse build_diff_dir_list_view(DiffDirListView* widget,
                                                         CmdBuffer::DrawList* lst,

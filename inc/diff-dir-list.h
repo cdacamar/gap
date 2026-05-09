@@ -73,6 +73,7 @@ namespace Diff
 
     // Queries.
     DirFileArray diff_dir_list_view_file_array(DiffDirListView* widget);
+    MergedFileArray diff_dir_list_view_merged_file_array(DiffDirListView* widget);
 
     // Building.
     DiffDirListViewResponse build_diff_dir_list_view(DiffDirListView* widget,

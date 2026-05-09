@@ -438,6 +438,9 @@ namespace Diff
         diff_dir_list_view_populate_merged_files(panel->A.view, dirs_A);
         diff_dir_list_view_populate_merged_files(panel->B.view, dirs_B);
         Arena::scratch_end(scratch);
+        // Phase 2: compute all diffs between corresponding files.
+        scratch = Arena::scratch_begin(Arena::no_conflicts);
+        Arena::scratch_end(scratch);
     }
 
     void diff_dir_panel_try_dir_drop(DiffDirPanel* panel, String8 path, UI::UIState* state, Feed::MessageFeed* feed)

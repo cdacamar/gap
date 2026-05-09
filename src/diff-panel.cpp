@@ -613,192 +613,19 @@ namespace Diff
         Timers::Stopwatch sw;
         sw.start();
         auto scratch = Arena::scratch_begin(Arena::no_conflicts);
-        // This is so that we can avoid possible chaining of scratch above.
-        auto scratch2 = Arena::scratch_begin({ &scratch.arena, 1 });
-        // Choose inner diff format.
-        using InnerDiffFmtFn = void (*)(Arena::Arena*, const BuildMergedListInput&);
-        InnerDiffFmtFn fns[] =
-        {
-            populate_merged_text_list,
-            populate_merged_text_list_word_based
+
+        DiffFileForViewInput in = {
+            .A = diff_text_view_text_file(panel->A.view),
+            .B = diff_text_view_text_file(panel->B.view),
+            .word_based_diff = panel->word_based_diff,
         };
-        InnerDiffFmtFn inner_diff_fn = fns[panel->word_based_diff];
-        TextFile* a = diff_text_view_text_file(panel->A.view);
-        TextFile* b = diff_text_view_text_file(panel->B.view);
-        EditList edits = diff_file_lines(scratch.arena, *a, *b);
-        // What we want is a sequence of 'lines' for both A and B which
-        // represent the 'merged' files together.  We will merge deletes
-        // and inserts and create 'gap' lines which will be rendered as
-        // an empty region in the text view.
-        MergedLineList lst_A = {};
-        MergedLineList lst_B = {};
-        MergedLineList lst_merge_B = {}; // This is to have as a write-back for the B list.
-        // These serve as candidate lists for us to, potentially, perform a sub-diff against
-        // the respective blocks for better letter-highlighting.
-        MergedTextList merged_txt_A = {};
-        MergedTextList merged_txt_B = {};
-        BuildMergedListInput merged_lst_input = {};
-        merged_lst_input.file_A = a;
-        merged_lst_input.file_B = b;
-        merged_lst_input.merge_arena = scratch.arena;
-        merged_lst_input.merged_A = &merged_txt_A;
-        merged_lst_input.merged_B = &merged_txt_B;
-        for EachNode(e, edits.first)
-        {
-            switch (e->edit.type)
-            {
-            case EditType::Del:
-                {
-                    // Add delete from A.
-                    LineRange rng_a = text_file_line_range(*a, CursorLine(e->edit.idx_a));
-                    MergedLine line_a = {
-                        .first = rng_a.first,
-                        .last = rng_a.last,
-                        .v_line = lst_A.count,
-                        .line = CursorLine(e->edit.idx_a),
-                        .type = EditType::Del,
-                    };
-                    diff_text_view_push_merge_line(scratch.arena, &lst_A, line_a);
-                    MergedLine line_b = {
-                        .first = CharOffset::Sentinel,
-                        .last = CharOffset::Sentinel,
-                        .v_line = lst_B.count,
-                        .line = CursorLine::Beginning,
-                        .type = EditType::Invalid,
-                    };
-                    diff_text_view_push_merge_line(scratch.arena, &lst_merge_B, line_b);
-                    // Now we add the A candidate.
-                    diff_text_view_push_merge_line(scratch2.arena, &merged_lst_input.A, line_a);
-                }
-                break;
-            case EditType::Ins:
-                {
-                    // Add insert from B.
-                    LineRange rng_b = text_file_line_range(*b, CursorLine(e->edit.idx_b));
-                    MergedLine line_b = {
-                        .first = rng_b.first,
-                        .last = rng_b.last,
-                        .v_line = lst_B.count,
-                        .line = CursorLine(e->edit.idx_b),
-                        .type = EditType::Ins,
-                    };
-                    // Try to pull from the merged list.  If we have one, we don't need to add
-                    // a sentinel to the A side.
-                    MergedLineNode* node = lst_merge_B.first;
-                    if (node == nullptr)
-                    {
-                        node = diff_text_view_push_merge_line(scratch.arena, &lst_B, line_b);
-                        MergedLine line_a = {
-                            .first = CharOffset::Sentinel,
-                            .last = CharOffset::Sentinel,
-                            .v_line = lst_A.count,
-                            .line = CursorLine::Beginning,
-                            .type = EditType::Invalid,
-                        };
-                        diff_text_view_push_merge_line(scratch.arena, &lst_A, line_a);
-                    }
-                    // We already have an entry for A.
-                    else
-                    {
-                        node->line = line_b;
-                        SLLQueuePop(lst_merge_B.first, lst_merge_B.last);
-                        node->next = nullptr;
-                        --lst_merge_B.count;
-                        SLLQueuePush(lst_B.first, lst_B.last, node);
-                        ++lst_B.count;
-                    }
-                    // Add the B candidate.
-                    diff_text_view_push_merge_line(scratch2.arena, &merged_lst_input.B, line_b);
-                }
-                break;
-            case EditType::Eq:
-                {
-                    // If there are any entries on the merge list, we need to add them now as gap entries.
-                    MergedLineNode* node = lst_merge_B.first;
-                    while (node != nullptr)
-                    {
-                        // Add gap from B.
-                        MergedLine line_b = {
-                            .first = CharOffset::Sentinel,
-                            .last = CharOffset::Sentinel,
-                            .v_line = lst_B.count,
-                            .line = CursorLine::Beginning,
-                            .type = EditType::Invalid,
-                        };
-                        // Insert B.
-                        node->line = line_b;
-                        SLLQueuePop(lst_merge_B.first, lst_merge_B.last);
-                        node->next = nullptr;
-                        --lst_merge_B.count;
-                        SLLQueuePush(lst_B.first, lst_B.last, node);
-                        ++lst_B.count;
+        DiffFileForViewResult result = diff_panel_diff_files_for_view(scratch.arena, in);
 
-                        // Move node forward.
-                        node = lst_merge_B.first;
-                    }
-                    // Insert on both sides.
-                    LineRange rng_b = text_file_line_range(*b, CursorLine(e->edit.idx_b));
-                    LineRange rng_a = text_file_line_range(*a, CursorLine(e->edit.idx_a));
-                    MergedLine line_a = {
-                        .first = rng_a.first,
-                        .last = rng_a.last,
-                        .v_line = lst_A.count,
-                        .line = CursorLine(e->edit.idx_a),
-                        .type = EditType::Eq,
-                    };
-                    MergedLine line_b = {
-                        .first = rng_b.first,
-                        .last = rng_b.last,
-                        .v_line = lst_B.count,
-                        .line = CursorLine(e->edit.idx_b),
-                        .type = EditType::Eq,
-                    };
-                    diff_text_view_push_merge_line(scratch.arena, &lst_A, line_a);
-                    diff_text_view_push_merge_line(scratch.arena, &lst_B, line_b);
-                    assert(lst_A.count == lst_B.count);
-                    // Try to pull candidates and create a merge block.
-                    inner_diff_fn(scratch2.arena, merged_lst_input);
-                    merged_lst_input.A = {};
-                    merged_lst_input.B = {};
-                    // Clear the temporary arena as well.
-                    Arena::pop_to(scratch2.arena, scratch2.pos);
-                }
-                break;
-            case EditType::Invalid:
-                break;
-            }
-        }
-        // If there are any remaining entries on the merge list, we need to add them now as gap entries.
-        MergedLineNode* node = lst_merge_B.first;
-        while (node != nullptr)
-        {
-            // Add gap from B.
-            MergedLine line_b = {
-                .first = CharOffset::Sentinel,
-                .last = CharOffset::Sentinel,
-                .v_line = lst_B.count,
-                .line = CursorLine::Beginning,
-                .type = EditType::Invalid,
-            };
-            // Insert B.
-            node->line = line_b;
-            SLLQueuePop(lst_merge_B.first, lst_merge_B.last);
-            node->next = nullptr;
-            --lst_merge_B.count;
-            SLLQueuePush(lst_B.first, lst_B.last, node);
-            ++lst_B.count;
+        diff_text_view_populate_line_diff(panel->A.view, result.lst_A);
+        diff_text_view_populate_line_diff(panel->B.view, result.lst_B);
+        diff_text_view_populate_text_blocks_diff(panel->A.view, result.merged_txt_A);
+        diff_text_view_populate_text_blocks_diff(panel->B.view, result.merged_txt_B);
 
-            // Move node forward.
-            node = lst_merge_B.first;
-        }
-        // Perform one final populate just in case the files were completely different.
-        inner_diff_fn(scratch2.arena, merged_lst_input);
-
-        diff_text_view_populate_line_diff(panel->A.view, lst_A);
-        diff_text_view_populate_line_diff(panel->B.view, lst_B);
-        diff_text_view_populate_text_blocks_diff(panel->A.view, merged_txt_A);
-        diff_text_view_populate_text_blocks_diff(panel->B.view, merged_txt_B);
-        Arena::scratch_end(scratch2);
         sw.stop();
         String8 msg = str8_fmt(scratch.arena, "Diff computed in %ums", sw.to_ms());
         feed->queue_info(msg);
@@ -851,6 +678,197 @@ namespace Diff
         {
             feed->queue_warning("Please drop file over specific diff side to apply diffs.");
         }
+    }
+
+    // Helpers.
+    DiffFileForViewResult diff_panel_diff_files_for_view(Arena::Arena* arena, DiffFileForViewInput in)
+    {
+        // This is so that we can avoid possible chaining of scratch above.
+        auto scratch = Arena::scratch_begin({ &arena, 1 });
+        // Choose inner diff format.
+        using InnerDiffFmtFn = void (*)(Arena::Arena*, const BuildMergedListInput&);
+        InnerDiffFmtFn fns[] =
+        {
+            populate_merged_text_list,
+            populate_merged_text_list_word_based
+        };
+        InnerDiffFmtFn inner_diff_fn = fns[in.word_based_diff];
+        EditList edits = diff_file_lines(arena, *in.A, *in.B);
+        // What we want is a sequence of 'lines' for both A and B which
+        // represent the 'merged' files together.  We will merge deletes
+        // and inserts and create 'gap' lines which will be rendered as
+        // an empty region in the text view.
+        MergedLineList lst_A = {};
+        MergedLineList lst_B = {};
+        MergedLineList lst_merge_B = {}; // This is to have as a write-back for the B list.
+        // These serve as candidate lists for us to, potentially, perform a sub-diff against
+        // the respective blocks for better letter-highlighting.
+        MergedTextList merged_txt_A = {};
+        MergedTextList merged_txt_B = {};
+        BuildMergedListInput merged_lst_input = {};
+        merged_lst_input.file_A = in.A;
+        merged_lst_input.file_B = in.B;
+        merged_lst_input.merge_arena = arena;
+        merged_lst_input.merged_A = &merged_txt_A;
+        merged_lst_input.merged_B = &merged_txt_B;
+        for EachNode(e, edits.first)
+        {
+            switch (e->edit.type)
+            {
+            case EditType::Del:
+                {
+                    // Add delete from A.
+                    LineRange rng_a = text_file_line_range(*in.A, CursorLine(e->edit.idx_a));
+                    MergedLine line_a = {
+                        .first = rng_a.first,
+                        .last = rng_a.last,
+                        .v_line = lst_A.count,
+                        .line = CursorLine(e->edit.idx_a),
+                        .type = EditType::Del,
+                    };
+                    diff_text_view_push_merge_line(arena, &lst_A, line_a);
+                    MergedLine line_b = {
+                        .first = CharOffset::Sentinel,
+                        .last = CharOffset::Sentinel,
+                        .v_line = lst_B.count,
+                        .line = CursorLine::Beginning,
+                        .type = EditType::Invalid,
+                    };
+                    diff_text_view_push_merge_line(arena, &lst_merge_B, line_b);
+                    // Now we add the A candidate.
+                    diff_text_view_push_merge_line(scratch.arena, &merged_lst_input.A, line_a);
+                }
+                break;
+            case EditType::Ins:
+                {
+                    // Add insert from B.
+                    LineRange rng_b = text_file_line_range(*in.B, CursorLine(e->edit.idx_b));
+                    MergedLine line_b = {
+                        .first = rng_b.first,
+                        .last = rng_b.last,
+                        .v_line = lst_B.count,
+                        .line = CursorLine(e->edit.idx_b),
+                        .type = EditType::Ins,
+                    };
+                    // Try to pull from the merged list.  If we have one, we don't need to add
+                    // a sentinel to the A side.
+                    MergedLineNode* node = lst_merge_B.first;
+                    if (node == nullptr)
+                    {
+                        node = diff_text_view_push_merge_line(arena, &lst_B, line_b);
+                        MergedLine line_a = {
+                            .first = CharOffset::Sentinel,
+                            .last = CharOffset::Sentinel,
+                            .v_line = lst_A.count,
+                            .line = CursorLine::Beginning,
+                            .type = EditType::Invalid,
+                        };
+                        diff_text_view_push_merge_line(arena, &lst_A, line_a);
+                    }
+                    // We already have an entry for A.
+                    else
+                    {
+                        node->line = line_b;
+                        SLLQueuePop(lst_merge_B.first, lst_merge_B.last);
+                        node->next = nullptr;
+                        --lst_merge_B.count;
+                        SLLQueuePush(lst_B.first, lst_B.last, node);
+                        ++lst_B.count;
+                    }
+                    // Add the B candidate.
+                    diff_text_view_push_merge_line(scratch.arena, &merged_lst_input.B, line_b);
+                }
+                break;
+            case EditType::Eq:
+                {
+                    // If there are any entries on the merge list, we need to add them now as gap entries.
+                    MergedLineNode* node = lst_merge_B.first;
+                    while (node != nullptr)
+                    {
+                        // Add gap from B.
+                        MergedLine line_b = {
+                            .first = CharOffset::Sentinel,
+                            .last = CharOffset::Sentinel,
+                            .v_line = lst_B.count,
+                            .line = CursorLine::Beginning,
+                            .type = EditType::Invalid,
+                        };
+                        // Insert B.
+                        node->line = line_b;
+                        SLLQueuePop(lst_merge_B.first, lst_merge_B.last);
+                        node->next = nullptr;
+                        --lst_merge_B.count;
+                        SLLQueuePush(lst_B.first, lst_B.last, node);
+                        ++lst_B.count;
+
+                        // Move node forward.
+                        node = lst_merge_B.first;
+                    }
+                    // Insert on both sides.
+                    LineRange rng_b = text_file_line_range(*in.B, CursorLine(e->edit.idx_b));
+                    LineRange rng_a = text_file_line_range(*in.A, CursorLine(e->edit.idx_a));
+                    MergedLine line_a = {
+                        .first = rng_a.first,
+                        .last = rng_a.last,
+                        .v_line = lst_A.count,
+                        .line = CursorLine(e->edit.idx_a),
+                        .type = EditType::Eq,
+                    };
+                    MergedLine line_b = {
+                        .first = rng_b.first,
+                        .last = rng_b.last,
+                        .v_line = lst_B.count,
+                        .line = CursorLine(e->edit.idx_b),
+                        .type = EditType::Eq,
+                    };
+                    diff_text_view_push_merge_line(arena, &lst_A, line_a);
+                    diff_text_view_push_merge_line(arena, &lst_B, line_b);
+                    assert(lst_A.count == lst_B.count);
+                    // Try to pull candidates and create a merge block.
+                    inner_diff_fn(scratch.arena, merged_lst_input);
+                    merged_lst_input.A = {};
+                    merged_lst_input.B = {};
+                    // Clear the temporary arena as well.
+                    Arena::pop_to(scratch.arena, scratch.pos);
+                }
+                break;
+            case EditType::Invalid:
+                break;
+            }
+        }
+        // If there are any remaining entries on the merge list, we need to add them now as gap entries.
+        MergedLineNode* node = lst_merge_B.first;
+        while (node != nullptr)
+        {
+            // Add gap from B.
+            MergedLine line_b = {
+                .first = CharOffset::Sentinel,
+                .last = CharOffset::Sentinel,
+                .v_line = lst_B.count,
+                .line = CursorLine::Beginning,
+                .type = EditType::Invalid,
+            };
+            // Insert B.
+            node->line = line_b;
+            SLLQueuePop(lst_merge_B.first, lst_merge_B.last);
+            node->next = nullptr;
+            --lst_merge_B.count;
+            SLLQueuePush(lst_B.first, lst_B.last, node);
+            ++lst_B.count;
+
+            // Move node forward.
+            node = lst_merge_B.first;
+        }
+        // Perform one final populate just in case the files were completely different.
+        inner_diff_fn(scratch.arena, merged_lst_input);
+        // We no longer need scratch.  It was only useful for building up the merged list inputs.
+        Arena::scratch_end(scratch);
+        return {
+            .lst_A = lst_A,
+            .lst_B = lst_B,
+            .merged_txt_A = merged_txt_A,
+            .merged_txt_B = merged_txt_B,
+        };
     }
 
     // Building.

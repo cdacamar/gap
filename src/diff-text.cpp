@@ -160,19 +160,6 @@ namespace Diff
         {
             return window.idx_buf[circular_window_mask(idx, window.cap)];
         }
-
-        MergedDiffView join_merged_line_list(Arena::Arena* arena, const MergedLineList& lst)
-        {
-            MergedDiffView result = {};
-            result.size = lst.count;
-            result.lines = Arena::push_array_no_zero<MergedLine>(arena, result.size);
-            uint64_t idx = 0;
-            for EachNode(n, lst.first)
-            {
-                result.lines[idx++] = n->line;
-            }
-            return result;
-        }
     } // namespace [anon]
 
     // Creation.
@@ -247,7 +234,7 @@ namespace Diff
     {
         widget->full_diffs = {};
         Arena::clear(widget->diff_arena);
-        widget->full_diffs = join_merged_line_list(widget->diff_arena, lst);
+        widget->full_diffs = diff_text_view_join_merged_line_list(widget->diff_arena, lst);
         widget->diffs = widget->full_diffs;
     }
 
@@ -255,21 +242,7 @@ namespace Diff
     {
         widget->full_diff_blocks = {};
         Arena::clear(widget->fine_diff_arena);
-        widget->full_diff_blocks.size = lst.count;
-        widget->full_diff_blocks.blocks = Arena::push_array_no_zero<MergedText>(widget->fine_diff_arena, widget->full_diff_blocks.size);
-        uint64_t idx = 0;
-        CursorLine prev_line = {};
-        for EachNode(n, lst.first)
-        {
-            MergedText* merged = &widget->full_diff_blocks.blocks[idx++];
-            *merged = n->merged;
-            // Compute the line.
-            // We save a lot of time by precomputing this because line lookup by offset is more expensive,
-            // a O(lg n) operation vs an O(1) if we know the line.
-            merged->line = text_file_line_for_offset(widget->text, merged->first);
-            assert(prev_line <= merged->line);
-            prev_line = merged->line;
-        }
+        widget->full_diff_blocks = diff_text_view_join_merged_text_blocks_list(widget->fine_diff_arena, lst, widget->text);
         // Set these to be equivalent until we involve the context window.
         widget->diff_blocks = widget->full_diff_blocks;
     }
@@ -412,7 +385,7 @@ namespace Diff
             }
         }
         // Collapse the list into an array.
-        widget->diffs = join_merged_line_list(widget->ctx_diff_arena, trimmed_lines);
+        widget->diffs = diff_text_view_join_merged_line_list(widget->ctx_diff_arena, trimmed_lines);
         Arena::scratch_end(scratch);
     }
 
@@ -433,6 +406,40 @@ namespace Diff
         SLLQueuePush(lst->first, lst->last, node);
         ++lst->count;
         return node;
+    }
+
+    MergedDiffView diff_text_view_join_merged_line_list(Arena::Arena* arena, MergedLineList lst)
+    {
+        MergedDiffView result = {};
+        result.size = lst.count;
+        result.lines = Arena::push_array_no_zero<MergedLine>(arena, result.size);
+        uint64_t idx = 0;
+        for EachNode(n, lst.first)
+        {
+            result.lines[idx++] = n->line;
+        }
+        return result;
+    }
+
+    MergedTextBlocks diff_text_view_join_merged_text_blocks_list(Arena::Arena* arena, MergedTextList lst, const TextFile& file)
+    {
+        MergedTextBlocks result = {};
+        result.size = lst.count;
+        result.blocks = Arena::push_array_no_zero<MergedText>(arena, result.size);
+        uint64_t idx = 0;
+        CursorLine prev_line = {};
+        for EachNode(n, lst.first)
+        {
+            MergedText* merged = &result.blocks[idx++];
+            *merged = n->merged;
+            // Compute the line.
+            // We save a lot of time by precomputing this because line lookup by offset is more expensive,
+            // a O(lg n) operation vs an O(1) if we know the line.
+            merged->line = text_file_line_for_offset(file, merged->first);
+            assert(prev_line <= merged->line);
+            prev_line = merged->line;
+        }
+        return result;
     }
 
     // Building.

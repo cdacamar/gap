@@ -86,6 +86,8 @@ namespace Diff
     // Helpers.
     MergedTextNode* diff_text_view_push_merged_text(Arena::Arena* arena, MergedTextList* lst, MergedText merged);
     MergedLineNode* diff_text_view_push_merge_line(Arena::Arena* arena, MergedLineList* lst, MergedLine line);
+    MergedDiffView diff_text_view_join_merged_line_list(Arena::Arena* arena, MergedLineList lst);
+    MergedTextBlocks diff_text_view_join_merged_text_blocks_list(Arena::Arena* arena, MergedTextList lst, const TextFile& file);
 
     // Queries.
     TextFile* diff_text_view_text_file(DiffTextView* widget);
