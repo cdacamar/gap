@@ -316,7 +316,7 @@ namespace Diff
                     {
                         diff_txt = fmt_string(fmt_buf, "+%I64d", count.ins);
                         pos = num_pos;
-                        pos = font_ctx.render_text(lst, diff_txt, pos, colors.ins_txt);
+                        pos = font_ctx.render_text(lst, diff_txt, pos, colors.ins_mark);
                     }
 
                     if (count.del != 0)
@@ -324,7 +324,7 @@ namespace Diff
                         diff_txt = fmt_string(fmt_buf, "-%I64d", count.del);
                         pos = num_pos;
                         pos.x += largest_ins_col_skip;
-                        pos = font_ctx.render_text(lst, diff_txt, pos, colors.del_txt);
+                        pos = font_ctx.render_text(lst, diff_txt, pos, colors.del_mark);
                     }
                     num_pos.y -= line_height;
                 }
