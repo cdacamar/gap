@@ -21,6 +21,7 @@ namespace Config
 #define DAT_FILE(name, T, desc) T name;
 #define DAT_STRING(name, T, desc) T name;
 #define DAT_SOUND(name, T, desc) T name;
+#define DAT_RECT_I(name, T, desc) T name;
 #include "config.dat"
 #undef DAT_CAT_START
 #undef DAT_CAT_END
@@ -33,6 +34,7 @@ namespace Config
 #undef DAT_FILE
 #undef DAT_STRING
 #undef DAT_SOUND
+#undef DAT_RECT_I
 
     // Initialization.
     void init();

@@ -997,7 +997,7 @@ namespace OS
 
     // --- START GAP API ---
     // Windowing.
-    OSWindow init_window(ScreenDimensions screen, String8 title)
+    OSWindow init_window(Vec4i wind_rect, String8 title)
     {
         // Largely borrowed from: https://www.khronos.org/opengl/wiki/Tutorial:_OpenGL_3.0_Context_Creation_(GLX)
         Display* display = XOpenDisplay(nullptr);
@@ -1033,7 +1033,7 @@ namespace OS
         data->xdnd_type_list   = XInternAtom(data->display, "XdndTypeList", False);
         data->xdnd_format_uri  = XInternAtom(data->display, "text/uri-list", False);
 
-        data->screen_size = screen;
+        data->screen_size = ScreenDimensions{ Width{ wind_rect.z }, Height{ wind_rect.a } };
 
         int visual_attrs[] =
         {
@@ -1124,10 +1124,13 @@ namespace OS
         wnd_attrs.border_pixel      = 0;
         wnd_attrs.event_mask        = StructureNotifyMask;
 
+        wind_rect.x = wind_rect.x == default_window_pos.x ? 0 : wind_rect.x;
+        wind_rect.y = wind_rect.y == default_window_pos.y ? 0 : wind_rect.y;
+
         Window wind = XCreateWindow(display,
                                     RootWindow(display, vi->screen),
-                                    0, 0,
-                                    rep(screen.width), rep(screen.height),
+                                    wind_rect.x, wind_rect.y,
+                                    wind_rect.z, wind_rect.a,
                                     0,
                                     vi->depth,
                                     InputOutput,
@@ -1328,6 +1331,27 @@ namespace OS
         return false;
     }
 
+    bool window_maximized(OSWindow)
+    {
+        // NYI.
+        return false;
+    }
+
+    void window_maximize(OSWindow)
+    {
+        // NYI.
+    }
+
+    void window_minimize(OSWindow)
+    {
+        // NYI.
+    }
+
+    void window_restore(OSWindow)
+    {
+        // NYI.
+    }
+
     bool window_fullscreened(OSWindow)
     {
         LinuxBackendData* data = linux_data();
@@ -1378,6 +1402,14 @@ namespace OS
 
         XSendEvent(data->display, DefaultRootWindow(data->display), False, SubstructureNotifyMask | SubstructureRedirectMask, &event);
         XFlush(data->display);
+    }
+
+    Vec4i window_rect(OSWindow wind)
+    {
+        LinuxBackendData* data = linux_data();
+        XWindowAttributes attrs = {};
+        XGetWindowAttributes(data->display, data->wind, &attrs);
+        return { attrs.x, attrs.y, attrs.width, attrs.height };
     }
 
     void swap_buffers(OSWindow wind)
@@ -1927,7 +1959,7 @@ namespace OS
     ScreenDimensions client_size()
     {
         LinuxBackendData* data = linux_data();
-        XWindowAttributes attrs{};
+        XWindowAttributes attrs = {};
         XGetWindowAttributes(data->display, data->wind, &attrs);
         return { .width = Width{ attrs.width }, .height = Height{ attrs.height } };
     }
@@ -2017,7 +2049,11 @@ namespace OS
             lnx_flags |= O_CREAT;
         }
 
+        auto scratch = Arena::scratch_begin(Arena::no_conflicts);
+        // Need null-termination.
+        file = str8_copy(scratch.arena, file);
         int fd = open(file.str, lnx_flags, 0655);
+        Arena::scratch_end(scratch);
         if (fd == -1)
             return FileHandle::Sentinel;
         return os_file_handle(fd);
@@ -2086,7 +2122,11 @@ namespace OS
     FileProperties file_properties(String8 path)
     {
         struct stat file_stat{};
+        auto scratch = Arena::scratch_begin(Arena::no_conflicts);
+        // Null-terminate.
+        path = str8_copy(scratch.arena, path);
         int result = stat(path.str, &file_stat);
+        Arena::scratch_end(scratch);
         FileProperties props{};
         if (result == -1)
             return props;
@@ -2102,7 +2142,11 @@ namespace OS
 
     Error create_directory(String8 dir)
     {
-        if (mkdir(dir.str, 0755) == -1)
+        auto scratch = Arena::scratch_begin(Arena::no_conflicts);
+        dir = str8_copy(scratch.arena, dir);
+        int make_dir_r = mkdir(dir.str, 0755);
+        Arena::scratch_end(scratch);
+        if (make_dir_r == -1)
         {
             if (errno != EEXIST)
                 return Error::CreateDirectoryFailed;
@@ -2117,14 +2161,22 @@ namespace OS
 
     bool file_or_path_exists(String8 path)
     {
+        auto scratch = Arena::scratch_begin(Arena::no_conflicts);
+        // Null-terminate.
+        path = str8_copy(scratch.arena, path);
         auto result = access(path.str, F_OK);
+        Arena::scratch_end(scratch);
         return result == 0;
     }
 
     bool regular_file_exists(String8 file)
     {
         struct stat file_stat{ };
+        auto scratch = Arena::scratch_begin(Arena::no_conflicts);
+        // Null-terminate.
+        file = str8_copy(scratch.arena, file);
         int result = stat(file.str, &file_stat);
+        Arena::scratch_end(scratch);
         if (result == -1)
             return false;
         return (file_stat.st_mode & S_IFREG);
@@ -2150,7 +2202,11 @@ namespace OS
 
     bool set_working_directory(String8 path)
     {
+        auto scratch = Arena::scratch_begin(Arena::no_conflicts);
+        // Null-terminate.
+        path = str8_copy(scratch.arena, path);
         int result = chdir(path.str);
+        Arena::scratch_end(scratch);
         return result == 0;
     }
 
@@ -2379,7 +2435,11 @@ namespace OS
     // Library handling.
     LibraryHandle load_library(String8 lib_name)
     {
+        auto scratch = Arena::scratch_begin(Arena::no_conflicts);
+        // Null-terminate.
+        lib_name = str8_copy(scratch.arena, lib_name);
         void* so = dlopen(lib_name.str, RTLD_LAZY | RTLD_LOCAL);
+        Arena::scratch_end(scratch);
         if (so == nullptr)
             return LibraryHandle::Sentinel;
         return os_library_handle(so);
@@ -2406,10 +2466,17 @@ namespace OS
 
     void* get_gl_function(LibraryHandle, String8 fn)
     {
-        void* pfn = reinterpret_cast<void*>(glXGetProcAddress(reinterpret_cast<const unsigned char*>(fn.str)));
-        if (pfn != nullptr)
-            return pfn;
-        return reinterpret_cast<void*>(glXGetProcAddressARB(reinterpret_cast<const unsigned char*>(fn.str)));
+        void* result = nullptr;
+        auto scratch = Arena::scratch_begin(Arena::no_conflicts);
+        // Null-terminate.
+        fn = str8_copy(scratch.arena, fn);
+        result = reinterpret_cast<void*>(glXGetProcAddress(reinterpret_cast<const unsigned char*>(fn.str)));
+        if (result == nullptr)
+        {
+            result = reinterpret_cast<void*>(glXGetProcAddressARB(reinterpret_cast<const unsigned char*>(fn.str)));
+        }
+        Arena::scratch_end(scratch);
+        return result;
     }
 
     // Process creation.

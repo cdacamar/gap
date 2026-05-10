@@ -614,7 +614,7 @@ namespace Diff
         {
             CmdBuffer::ClipRect header_clip = clip;
             auto font_ctx = panel->atlas->render_font_context(font_size);
-            header_clip.height = Height(UI::standard_font_padding(font_size) * 2);
+            header_clip.height = Height(UI::standard_font_padding(font_size));
             Vec2f base_pos;
             base_pos.y = static_cast<float>(rep(clip.height));
             // Create titles for each panel and center them.

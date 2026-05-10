@@ -1890,7 +1890,7 @@ EndFragment:%011jd
 
     // Windowing.
 #ifdef WIN32_GFX
-    OSWindow init_window(ScreenDimensions scr, String8 title)
+    OSWindow init_window(Vec4i wind_rect, String8 title)
     {
         PROF_BEGIN(wnd_core_ctx, "WIN32 - Core window creation");
         auto scratch = Arena::scratch_begin(Arena::no_conflicts);
@@ -1941,13 +1941,16 @@ EndFragment:%011jd
         WNDCLASSEXW wc = { sizeof(wc), CS_OWNDC, wnd_proc, 0L, 0L, GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr, L"gap", nullptr };
         wc.hIcon = LoadIconW(wc.hInstance, MAKEINTRESOURCEW(1));
         ::RegisterClassExW(&wc);
+
+        wind_rect.x = wind_rect.x == default_window_pos.x ? CW_USEDEFAULT : wind_rect.x;
+        wind_rect.y = wind_rect.y == default_window_pos.y ? CW_USEDEFAULT : wind_rect.y;
         HWND hwnd = ::CreateWindowExW(WS_EX_APPWINDOW,
                                         wc.lpszClassName,
                                         utf16_title.str,
                                         WS_OVERLAPPEDWINDOW | WS_SIZEBOX | WS_THICKFRAME | WS_MAXIMIZEBOX,
-                                        CW_USEDEFAULT, CW_USEDEFAULT,
-                                        rep(scr.width),
-                                        rep(scr.height),
+                                        wind_rect.x, wind_rect.y,
+                                        wind_rect.z,
+                                        wind_rect.a,
                                         nullptr,
                                         nullptr,
                                         wc.hInstance,
@@ -1956,7 +1959,7 @@ EndFragment:%011jd
         PROF_END(wnd_core_ctx);
 
         data->wc = wc;
-        data->screen_size = scr;
+        data->screen_size = ScreenDimensions{ Width{ wind_rect.z }, Height{ wind_rect.a } };
         OSWindow result_wnd = os_window(hwnd);
 
         // Initialize renderer.
@@ -2016,6 +2019,21 @@ EndFragment:%011jd
         return ::IsIconic(win32_window(wind));
     }
 
+    bool window_maximized(OSWindow wind)
+    {
+        return ::IsZoomed(win32_window(wind));
+    }
+
+    void window_maximize(OSWindow wind)
+    {
+        ::ShowWindow(win32_window(wind), SW_MAXIMIZE);
+    }
+
+    void window_restore(OSWindow wind)
+    {
+        ::ShowWindow(win32_window(wind), SW_RESTORE);
+    }
+
     // Fullscreening logic largely borrowed from the great Raymond Chen: https://devblogs.microsoft.com/oldnewthing/20100412-00/?p=14353.
     bool window_fullscreened(OSWindow wind)
     {
@@ -2050,6 +2068,15 @@ EndFragment:%011jd
         SetWindowLongW(hwnd, GWL_STYLE, style | WS_OVERLAPPEDWINDOW);
         SetWindowPlacement(hwnd, &data->win_place);
         SetWindowPos(hwnd, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+    }
+
+    Vec4i window_rect(OSWindow wind)
+    {
+        RECT rect = {};
+        GetWindowRect(win32_window(wind), &rect);
+        int w = rect.right - rect.left;
+        int h = rect.bottom - rect.top;
+        return { rect.left, rect.top, w, h };
     }
 
 #ifdef WIN32_GFX

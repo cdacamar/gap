@@ -40,6 +40,7 @@ namespace Config
 #define DAT_FILE(name, T, desc)
 #define DAT_STRING(name, T, desc)
 #define DAT_SOUND(name, T, desc)
+#define DAT_RECT_I(name, T, desc)
 #include "config.dat"
 #undef DAT_CAT_START
 #undef DAT_TOGGLE
@@ -52,6 +53,7 @@ namespace Config
 #undef DAT_FILE
 #undef DAT_STRING
 #undef DAT_SOUND
+#undef DAT_RECT_I
 
 #define DAT_CAT_START(T, a, comp, path) void write_ ## a ## _chk ([[maybe_unused]] CheckboxOptions* opts) { \
     [[maybe_unused]] int i = 0; \
@@ -67,6 +69,7 @@ namespace Config
 #define DAT_FILE(name, T, desc)
 #define DAT_STRING(name, T, desc)
 #define DAT_SOUND(name, T, desc)
+#define DAT_RECT_I(name, T, desc)
 #include "config.dat"
 #undef DAT_CAT_START
 #undef DAT_TOGGLE
@@ -79,6 +82,7 @@ namespace Config
 #undef DAT_FILE
 #undef DAT_STRING
 #undef DAT_SOUND
+#undef DAT_RECT_I
 
         struct FontSizeValue
         {
@@ -103,6 +107,7 @@ namespace Config
 #define DAT_FILE(name, T, desc)
 #define DAT_STRING(name, T, desc)
 #define DAT_SOUND(name, T, desc)
+#define DAT_RECT_I(name, T, desc)
 #include "config.dat"
 #undef DAT_CAT_START
 #undef DAT_TOGGLE
@@ -114,6 +119,7 @@ namespace Config
 #undef DAT_PATH
 #undef DAT_STRING
 #undef DAT_SOUND
+#undef DAT_RECT_I
 
 #define DAT_CAT_START(T, a, comp, path) void write_ ## a ## _fntsz ([[maybe_unused]] FontSizeValues* opts) { \
     [[maybe_unused]] int i = 0; \
@@ -129,6 +135,7 @@ namespace Config
 #define DAT_FILE(name, T, desc)
 #define DAT_STRING(name, T, desc)
 #define DAT_SOUND(name, T, desc)
+#define DAT_RECT_I(name, T, desc)
 #include "config.dat"
 #undef DAT_CAT_START
 #undef DAT_TOGGLE
@@ -141,6 +148,7 @@ namespace Config
 #undef DAT_FILE
 #undef DAT_STRING
 #undef DAT_SOUND
+#undef DAT_RECT_I
 
         struct PathValue
         {
@@ -165,6 +173,7 @@ namespace Config
 #define DAT_FILE(name, T, desc)
 #define DAT_STRING(name, T, desc)
 #define DAT_SOUND(name, T, desc)
+#define DAT_RECT_I(name, T, desc)
 #include "config.dat"
 #undef DAT_CAT_START
 #undef DAT_TOGGLE
@@ -176,6 +185,7 @@ namespace Config
 #undef DAT_PATH
 #undef DAT_STRING
 #undef DAT_SOUND
+#undef DAT_RECT_I
 
 #define DAT_CAT_START(T, a, comp, path) void write_ ## a ## _path ([[maybe_unused]] PathValues* opts) { \
     [[maybe_unused]] int i = 0; \
@@ -195,6 +205,7 @@ namespace Config
 #define DAT_FILE(name, T, desc)
 #define DAT_STRING(name, T, desc)
 #define DAT_SOUND(name, T, desc)
+#define DAT_RECT_I(name, T, desc)
 #include "config.dat"
 #undef DAT_CAT_START
 #undef DAT_TOGGLE
@@ -207,6 +218,7 @@ namespace Config
 #undef DAT_FILE
 #undef DAT_STRING
 #undef DAT_SOUND
+#undef DAT_RECT_I
 
         struct ColorValue
         {
@@ -231,6 +243,7 @@ namespace Config
 #define DAT_FILE(name, T, desc)
 #define DAT_STRING(name, T, desc)
 #define DAT_SOUND(name, T, desc)
+#define DAT_RECT_I(name, T, desc)
 #include "config.dat"
 #undef DAT_CAT_START
 #undef DAT_TOGGLE
@@ -243,6 +256,7 @@ namespace Config
 #undef DAT_FILE
 #undef DAT_STRING
 #undef DAT_SOUND
+#undef DAT_RECT_I
 
 #define DAT_CAT_START(T, a, comp, path) void write_ ## a ## _color ([[maybe_unused]] ColorValues* opts) { \
     [[maybe_unused]] int i = 0; \
@@ -258,6 +272,7 @@ namespace Config
 #define DAT_FILE(name, T, desc)
 #define DAT_STRING(name, T, desc)
 #define DAT_SOUND(name, T, desc)
+#define DAT_RECT_I(name, T, desc)
 #include "config.dat"
 #undef DAT_CAT_START
 #undef DAT_TOGGLE
@@ -269,6 +284,7 @@ namespace Config
 #undef DAT_PATH
 #undef DAT_STRING
 #undef DAT_SOUND
+#undef DAT_RECT_I
 
         struct CheckboxCollection
         {
@@ -302,6 +318,7 @@ namespace Config
 #define DAT_FILE(name, T, desc)
 #define DAT_STRING(name, T, desc)
 #define DAT_SOUND(name, T, desc)
+#define DAT_RECT_I(name, T, desc)
 #include "config.dat"
 #undef DAT_CAT_START
 #undef DAT_TOGGLE
@@ -314,6 +331,7 @@ namespace Config
 #undef DAT_FILE
 #undef DAT_STRING
 #undef DAT_SOUND
+#undef DAT_RECT_I
 
         struct FontSizeCollection
         {
@@ -347,6 +365,7 @@ namespace Config
 #define DAT_FILE(name, T, desc)
 #define DAT_STRING(name, T, desc)
 #define DAT_SOUND(name, T, desc)
+#define DAT_RECT_I(name, T, desc)
 #include "config.dat"
 #undef DAT_CAT_START
 #undef DAT_TOGGLE
@@ -359,6 +378,7 @@ namespace Config
 #undef DAT_FILE
 #undef DAT_STRING
 #undef DAT_SOUND
+#undef DAT_RECT_I
 
         struct PathCollection
         {
@@ -392,6 +412,7 @@ namespace Config
 #define DAT_FILE(name, T, desc)
 #define DAT_STRING(name, T, desc)
 #define DAT_SOUND(name, T, desc)
+#define DAT_RECT_I(name, T, desc)
 #include "config.dat"
 #undef DAT_CAT_START
 #undef DAT_TOGGLE
@@ -404,6 +425,7 @@ namespace Config
 #undef DAT_FILE
 #undef DAT_STRING
 #undef DAT_SOUND
+#undef DAT_RECT_I
 
         struct ColorCollection
         {
@@ -437,6 +459,7 @@ namespace Config
 #define DAT_FILE(name, T, desc)
 #define DAT_STRING(name, T, desc)
 #define DAT_SOUND(name, T, desc)
+#define DAT_RECT_I(name, T, desc)
 #include "config.dat"
 #undef DAT_CAT_START
 #undef DAT_TOGGLE
@@ -448,6 +471,7 @@ namespace Config
 #undef DAT_PATH
 #undef DAT_STRING
 #undef DAT_SOUND
+#undef DAT_RECT_I
 
         CheckboxCollections checkbox_collection;
         FontSizeCollections font_size_collection;
@@ -475,6 +499,7 @@ namespace Config
 #define DAT_FILE(name, T, desc)
 #define DAT_STRING(name, T, desc)
 #define DAT_SOUND(name, T, desc)
+#define DAT_RECT_I(name, T, desc)
 #include "config.dat"
 #undef DAT_CAT_START
 #undef DAT_TOGGLE
@@ -487,6 +512,7 @@ namespace Config
 #undef DAT_FILE
 #undef DAT_STRING
 #undef DAT_SOUND
+#undef DAT_RECT_I
         }
 
         enum class CheckboxEntry : size_t

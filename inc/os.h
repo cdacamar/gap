@@ -1,6 +1,7 @@
 #pragma once
 
 #include "arena.h"
+#include "constants.h"
 #include "gap-core.h"
 #include "gap-strings.h"
 #include "types.h"
@@ -265,6 +266,8 @@ namespace OS
         Sentinel = sentinel_for<Thread>
     };
 
+    inline constexpr Vec4i default_window_pos = { Constants::max_S32 };
+
     using ThreadEntryPointFunctionType = void(*)(void*);
 
     // Date/time
@@ -277,13 +280,17 @@ namespace OS
     String8 format_error(Arena::Arena* arena, OSError err);
 
     // Windowing.
-    OSWindow init_window(ScreenDimensions screen, String8 title);
+    OSWindow init_window(Vec4i wind_rect, String8 title);
     void window_minimum_size(ScreenDimensions min_size);
     void destroy_window(OSWindow wind);
     bool window_minimized(OSWindow wind);
+    bool window_maximized(OSWindow wind);
+    void window_maximize(OSWindow wind);
+    void window_restore(OSWindow wind);
     bool window_fullscreened(OSWindow wind);
     void window_fullscreen(OSWindow wind);
     void window_windowed(OSWindow wind);
+    Vec4i window_rect(OSWindow wind);
     void swap_buffers(OSWindow wind);
     OSWindow core_window();
     Error apply_window_border_color(OSWindow wind, const Vec4f& color);

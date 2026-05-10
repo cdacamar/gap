@@ -344,9 +344,12 @@ namespace Config
 
         SystemCore system_core_instance =
         {
+            .core_window_rect = { OS::default_window_pos.x, OS::default_window_pos.y, rep(Constants::screen.width), rep(Constants::screen.height) },
             .async_update_frequency_ms = 1000,
             .noisy_events = false,
             .noisy_flattened_events = false,
+            .fullscreen = false,
+            .maximized = false,
         };
 
         SystemFonts system_fonts_instance;
@@ -418,6 +421,12 @@ namespace Config
             Arena::scratch_end(scratch);
         }
 
+        void toml_save_rect_i(TomlSaveInput* in, String8 name, const Vec4i& rect)
+        {
+            String8 entry = fmt_string(in->fmt_buf, "%S = [%d, %d, %d, %d]\n", name, rect.xyza[0], rect.xyza[1], rect.xyza[2], rect.xyza[3]);
+            str8_serial_push_str8(in->arena, &in->serial_lst, entry);
+        }
+
         void toml_save_linebreak(TomlSaveInput* in)
         {
             str8_serial_push_char(in->arena, &in->serial_lst, '\n');
@@ -441,6 +450,7 @@ namespace Config
 #define DAT_PATH(name, T, desc) toml_save_path(in, str8_mut(str8_literal(#name)), x.name);
 #define DAT_FILE(name, T, desc) toml_save_file_path(in, str8_mut(str8_literal(#name)), x.name);
 #define DAT_STRING(name, T, desc) toml_save_string(in, str8_mut(str8_literal(#name)), x.name);
+#define DAT_RECT_I(name, T, desc) toml_save_rect_i(in, str8_mut(str8_literal(#name)), x.name);
 #include "config.dat"
 #undef DAT_CAT_START
 #undef DAT_CAT_END
@@ -452,6 +462,7 @@ namespace Config
 #undef DAT_PATH
 #undef DAT_FILE
 #undef DAT_STRING
+#undef DAT_RECT_I
 
         // --- LOADING ----------------------------------------------
         void toml_load_color(Arena::Arena*, TinyToml::ParseMsg* msg, void* color)
@@ -522,6 +533,23 @@ namespace Config
             }
         }
 
+        void toml_load_rect_i(Arena::Arena*, TinyToml::ParseMsg* msg, void* rect)
+        {
+            if (msg->kind == TinyToml::ParseMsg::Kind::Array)
+            {
+                Vec4i* result = reinterpret_cast<Vec4i*>(rect);
+                *result = {};
+                uint64_t idx = 0;
+                for EachNode(n, msg->array.first)
+                {
+                    if (TinyToml::any_integral(n->data))
+                    {
+                        result->xyza[idx++] = static_cast<int>(TinyToml::signed_integral_val(n->data));
+                    }
+                }
+            }
+        }
+
         void process_table_msg(Arena::Arena* arena, ConfigTableSet* cfg_tables, TinyToml::ParseMsg* msg, Feed::MessageFeed* feed)
         {
             auto scratch = Arena::scratch_begin({ &arena, 1 });
@@ -586,6 +614,7 @@ namespace Config
 #define DAT_PATH(name, T, desc) push_config_msg_set_msg(arena, &pair_set, str8_mut(str8_literal(#name)), &x->name, toml_load_path);
 #define DAT_FILE(name, T, desc) push_config_msg_set_msg(arena, &pair_set, str8_mut(str8_literal(#name)), &x->name, toml_load_file_path);
 #define DAT_STRING(name, T, desc) push_config_msg_set_msg(arena, &pair_set, str8_mut(str8_literal(#name)), &x->name, toml_load_string);
+#define DAT_RECT_I(name, T, desc) push_config_msg_set_msg(arena, &pair_set, str8_mut(str8_literal(#name)), &x->name, toml_load_rect_i);
 #include "config.dat"
 #undef DAT_CAT_START
 #undef DAT_CAT_END
@@ -597,6 +626,7 @@ namespace Config
 #undef DAT_PATH
 #undef DAT_FILE
 #undef DAT_STRING
+#undef DAT_RECT_I
 
 // Helpers.
 
@@ -611,6 +641,7 @@ namespace Config
 #define DAT_PATH(name, T, desc)
 #define DAT_FILE(name, T, desc)
 #define DAT_STRING(name, T, desc)
+#define DAT_RECT_I(name, T, desc)
 #include "config.dat"
 #undef DAT_CAT_START
 #undef DAT_CAT_END
@@ -622,6 +653,7 @@ namespace Config
 #undef DAT_PATH
 #undef DAT_FILE
 #undef DAT_STRING
+#undef DAT_RECT_I
 
 #define DAT_CAT_START(T, access, component, path) void move_owned_values_to([[maybe_unused]] Arena::Arena* arena, [[maybe_unused]] T* x) {
 #define DAT_CAT_END() }
@@ -633,6 +665,7 @@ namespace Config
 #define DAT_PATH(name, T, desc) x->name = str8_copy(arena, x->name);
 #define DAT_FILE(name, T, desc) x->name = str8_copy(arena, x->name);
 #define DAT_STRING(name, T, desc) x->name = str8_copy(arena, x->name);
+#define DAT_RECT_I(name, T, desc)
 #include "config.dat"
 #undef DAT_CAT_START
 #undef DAT_CAT_END
@@ -644,6 +677,7 @@ namespace Config
 #undef DAT_PATH
 #undef DAT_FILE
 #undef DAT_STRING
+#undef DAT_RECT_I
 
         enum class UseComputedColors : bool { No, Yes };
 
@@ -843,6 +877,7 @@ namespace Config
 #define DAT_PATH(name, T, desc)
 #define DAT_FILE(name, T, desc)
 #define DAT_STRING(name, T, desc)
+#define DAT_RECT_I(name, T, desc)
 #include "config.dat"
 #undef DAT_CAT_START
 #undef DAT_CAT_END
@@ -854,6 +889,7 @@ namespace Config
 #undef DAT_PATH
 #undef DAT_FILE
 #undef DAT_STRING
+#undef DAT_RECT_I
         need_save = true;
     }
 

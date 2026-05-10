@@ -1,7 +1,7 @@
 // Config data arranged as follows:
 // DAT_CAT_START -- Structure name, accessor, component, config path
 // DAT_CAT_END -- Structure end
-// DAT_{COLOR,TOGGLE,FONTSIZE,PX,INT,PATH,FILE,STRING,SOUNDS}: (name) (type) (description)
+// DAT_{COLOR,TOGGLE,FONTSIZE,PX,INT,PATH,FILE,STRING,RECT_I}: (name) (type) (description)
 
 DAT_CAT_START(HotkeyState, hotkey_state, "Hotkeys", "hotkey.state")
     DAT_FILE(hotkeys, String8, "Current hotkeys settings")
@@ -72,13 +72,16 @@ DAT_CAT_START(WidgetState, widget_state, "Widget", "widget.state")
     DAT_PX(scrollbar_min_size,           int, "Scrollbar minumum size")
 DAT_CAT_END()
 
-DAT_CAT_START(SystemCore, system_core, "System", "system.core")
-    DAT_INT(async_update_frequency_ms,  int,  "Update frequency of async behaviors in ms")
-    DAT_TOGGLE(noisy_events,            bool, "Debug: Noisy events")
-    DAT_TOGGLE(noisy_flattened_events,  bool, "Debug: Noisy flattened events")
+DAT_CAT_START(SystemCore, system_core, "System Core", "system.core")
+    DAT_RECT_I(core_window_rect,        Vec4i, "Primary window rectangle")
+    DAT_INT(async_update_frequency_ms,  int,   "Update frequency of async behaviors in ms")
+    DAT_TOGGLE(noisy_events,            bool,  "Debug: Noisy events")
+    DAT_TOGGLE(noisy_flattened_events,  bool,  "Debug: Noisy flattened events")
+    DAT_TOGGLE(fullscreen,              bool,  "Fullscreen")
+    DAT_TOGGLE(maximized,               bool,  "Maximized")
 DAT_CAT_END()
 
-DAT_CAT_START(SystemFonts, system_fonts, "System", "system.fonts")
+DAT_CAT_START(SystemFonts, system_fonts, "System Fonts", "system.fonts")
     DAT_PATH(fallback_fonts_folder, String8, "Fallback fonts folder")
     DAT_FILE(current_font,          String8, "Current font (.ttf)")
 DAT_CAT_END()

@@ -617,6 +617,41 @@ void ui_new_frame(UIState* state, float dt)
     Arena::clear(state->frame_arena);
 }
 
+void process_window_state(OS::OSWindow wind)
+{
+    bool wind_fs = OS::window_fullscreened(wind);
+    bool wind_max = OS::window_maximized(wind);
+    bool changed = false;
+    Config::SystemCore sys_core = Config::system_core();
+    if (wind_fs != sys_core.fullscreen)
+    {
+        sys_core.fullscreen = wind_fs;
+        changed = true;
+    }
+
+    if (wind_max != sys_core.maximized)
+    {
+        sys_core.maximized = wind_max;
+        changed = true;
+    }
+
+    if (not wind_fs and not wind_max)
+    {
+        Vec4i wind_pos = OS::window_rect(wind);
+        if (wind_pos != sys_core.core_window_rect)
+        {
+            sys_core.core_window_rect = wind_pos;
+            changed = true;
+        }
+    }
+
+    if (changed)
+    {
+        Feed::global_feed()->queue_info("updated");
+        Config::update(sys_core);
+    }
+}
+
 void render_core(RenderCoreData* data)
 {
     const uint32_t start = rep(OS::get_ticks32());
@@ -803,6 +838,9 @@ void render_core(RenderCoreData* data)
 
     // Swap the buffer.
     Render::window_end_frame(OS::core_window());
+
+    // Populate window properties.
+    process_window_state(OS::core_window());
 
     Render::consume_frame();
 
@@ -1295,7 +1333,7 @@ int gap_main_entry(int argc, char** argv)
     PROF_END(cfg_load_ctx);
 
     PROF_BEGIN(main_wnd_ctx, "Window init");
-    OS::OSWindow window = OS::init_window(Constants::screen, str8_mut(str8_literal("gap")));
+    OS::OSWindow window = OS::init_window(Config::system_core().core_window_rect, str8_mut(str8_literal("gap")));
     if (window == OS::OSWindow::Sentinel)
     {
         fprintf(stderr, "ERROR: Could not create core window.");
@@ -1564,6 +1602,16 @@ int gap_main_entry(int argc, char** argv)
     // Arena for events.
     Arena::Arena* os_event_arena = Arena::alloc(Arena::default_params);
     OS::Events events{};
+
+    // Now that we have everything set up, let's see if we need to apply screen state.
+    if (Config::system_core().fullscreen)
+    {
+        OS::window_fullscreen(OS::core_window());
+    }
+    else if (Config::system_core().maximized)
+    {
+        OS::window_maximize(OS::core_window());
+    }
 
     while (not quit)
     {
