@@ -281,15 +281,6 @@ namespace Diff
                 colors.gap_line,                // EditType::Invalid
                 colors.trimmed_text,            // EditType::Skip
             };
-
-            Vec4f colors_txt_map[] =
-            {
-                colors.del_txt,                // EditType::Del
-                colors.ins_txt,                // EditType::Ins
-                colors.eq_txt,                 // EditType::Eq
-                colors.gap_line,               // EditType::Invalid
-                colors.trimmed_text,           // EditType::Skip
-            };
             Vec4f color;
 
             // Render diff counts sidebar if available.

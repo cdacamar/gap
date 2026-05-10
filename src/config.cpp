@@ -271,6 +271,7 @@ namespace Config
             .trimmed_text               = hex_to_vec4f(0xE3811C7E),
             .del_mark                   = hex_to_vec4f(0xFF0000FF),
             .ins_mark                   = hex_to_vec4f(0x00FF00FF),
+            .selected_dir_file          = hex_to_vec4f(0x00ADFF80),
         };
 
         DiffColors diff_colors_inverse_instance;
