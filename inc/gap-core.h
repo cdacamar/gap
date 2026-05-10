@@ -23,7 +23,7 @@ void update_frame(RenderCoreData* data);
 #define BUILD_TITLE "gap - Text Diff"
 
 #define BUILD_MAJOR 0
-#define BUILD_MINOR 1
+#define BUILD_MINOR 2
 #define BUILD_PATCH 0
 
 #define VERSION_STRING STRINGIFY(BUILD_MAJOR) "." STRINGIFY(BUILD_MINOR) "." STRINGIFY(BUILD_PATCH)
