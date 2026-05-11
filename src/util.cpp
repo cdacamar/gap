@@ -341,5 +341,8 @@ Vec4f hsl_to_rgb(HSLInput in)
 
 uint64_t digits(uint64_t n)
 {
+    // Note: Log is not defined for 0.
+    if (n == 0)
+        return 1;
     return static_cast<uint64_t>(std::floor(std::log10(n) + 1));
 }

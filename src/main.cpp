@@ -1527,6 +1527,7 @@ int gap_main_entry(int argc, char** argv)
     config_explorer.sync_config();
     help.sync_config();
     arena_report.sync_config();
+    Diff::diff_panel_sync_config(diff_panel, &message_feed);
     Diff::diff_dir_panel_sync_config(diff_dir_panel);
 
     RenderCoreData render_core_data = {

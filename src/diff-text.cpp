@@ -206,6 +206,11 @@ namespace Diff
     }
 
     // Interaction.
+    void diff_text_view_sync_config(DiffTextView* widget)
+    {
+        widget->scroll->sync_config();
+    }
+
     void diff_text_view_populate_text(DiffTextView* widget, const TextFile& text)
     {
         // If we populate text, we should remove the existing diffs as well.

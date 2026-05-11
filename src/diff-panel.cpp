@@ -638,6 +638,9 @@ namespace Diff
 
     void diff_panel_sync_config(DiffPanel* panel, Feed::MessageFeed* feed)
     {
+        // Sync the config with text widgets.
+        diff_text_view_sync_config(panel->A.view);
+        diff_text_view_sync_config(panel->B.view);
         // If this was changed, we need to recompute everything.
         if (panel->word_based_diff != Config::diff_state().word_based_diff)
         {

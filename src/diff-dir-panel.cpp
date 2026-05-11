@@ -284,6 +284,9 @@ namespace Diff
 
     void diff_dir_panel_sync_config(DiffDirPanel* panel)
     {
+        // Sync the confdig with widgets.
+        diff_dir_list_view_sync_config(panel->A.view);
+        diff_dir_list_view_sync_config(panel->B.view);
         panel->word_based_diff = Config::diff_state().word_based_diff;
         panel->window->sync_config(panel->atlas);
     }

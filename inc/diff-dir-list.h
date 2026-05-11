@@ -88,6 +88,7 @@ namespace Diff
     void release_diff_dir_list_view(DiffDirListView* widget);
 
     // Interaction.
+    void diff_dir_list_view_sync_config(DiffDirListView* widget);
     void diff_dir_list_view_populate_files(DiffDirListView* widget, FlatDirEntryList lst);
     void diff_dir_list_view_populate_merged_files(DiffDirListView* widget, MergedFileList lst);
     void diff_dir_list_view_share_scroll_pos(DiffDirListView* widget, const DiffDirListView* share_from);

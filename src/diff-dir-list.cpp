@@ -89,6 +89,11 @@ namespace Diff
     }
 
     // Interaction.
+    void diff_dir_list_view_sync_config(DiffDirListView* widget)
+    {
+        widget->scroll->sync_config();
+    }
+
     void diff_dir_list_view_populate_files(DiffDirListView* widget, FlatDirEntryList lst)
     {
         widget->files = {};

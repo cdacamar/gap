@@ -91,6 +91,7 @@ namespace Diff
     void release_diff_text_view(DiffTextView* widget);
 
     // Interaction.
+    void diff_text_view_sync_config(DiffTextView* widget);
     void diff_text_view_populate_text(DiffTextView* widget, const TextFile& text);
     void diff_text_view_populate_line_diff(DiffTextView* widget, MergedLineList lst);
     void diff_text_view_populate_text_blocks_diff(DiffTextView* widget, MergedTextList lst);
