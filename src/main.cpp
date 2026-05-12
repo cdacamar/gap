@@ -1232,6 +1232,14 @@ void process_global_events(RenderCoreData* data)
         data->config_explorer->start(*data->screen, data->ui_state);
     }
 
+    if (hotkey(*state, Hotkey::GLB_ConfigExplorerPath))
+    {
+        auto scratch = Arena::scratch_begin(Arena::no_conflicts);
+        String8 cfg_dir = default_config_directory(scratch.arena);
+        OS::open_path_in_explorer(cfg_dir);
+        Arena::scratch_end(scratch);
+    }
+
     if (hotkey(*state, Hotkey::GLB_OpenDiffDirPanel)
         and (*data->cmd_mode == CommandMode::None))
     {
