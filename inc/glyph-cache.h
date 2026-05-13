@@ -61,6 +61,11 @@ namespace Glyph
                             SpecialGlyph glyph,
                             const Vec2f& pos,
                             const Vec4f& color);
+        Vec2f render_icon_glyph_no_offsets_rotation(CmdBuffer::DrawList* lst,
+                            SpecialGlyph glyph,
+                            float rotation,
+                            const Vec2f& pos,
+                            const Vec4f& color);
 
         // Measurement functions.
         Vec2f measure_text(String8 text);

@@ -153,16 +153,17 @@ namespace CmdBuffer
         void render_quad(DrawList* lst,
                         const QuadInput& q,
                         const Vec4f& col,
-                        const Vec2f& uv_a, const Vec2f& uv_c)
+                        const Vec2f& uv_a, const Vec2f& uv_c,
+                        const VertFlags& flags)
         {
             Vec2f uv_b{ uv_c.x, uv_a.y };
             Vec2f uv_d{ uv_a.x, uv_c.y };
 
             DrawVertex* vbuf = bump_vert_buf(lst, 4);
-            vbuf[0] = { .pos = q.p0123[0], .color = col, .uv = uv_a };
-            vbuf[1] = { .pos = q.p0123[1], .color = col, .uv = uv_b };
-            vbuf[2] = { .pos = q.p0123[2], .color = col, .uv = uv_c };
-            vbuf[3] = { .pos = q.p0123[3], .color = col, .uv = uv_d };
+            vbuf[0] = { .pos = q.p0123[0], .color = col, .uv = uv_a, .cust1 = flags.take_texel, .cust2 = flags.blend_black };
+            vbuf[1] = { .pos = q.p0123[1], .color = col, .uv = uv_b, .cust1 = flags.take_texel, .cust2 = flags.blend_black };
+            vbuf[2] = { .pos = q.p0123[2], .color = col, .uv = uv_c, .cust1 = flags.take_texel, .cust2 = flags.blend_black };
+            vbuf[3] = { .pos = q.p0123[3], .color = col, .uv = uv_d, .cust1 = flags.take_texel, .cust2 = flags.blend_black };
 
             // Indices.
             auto idx = lst->last_index;
@@ -958,6 +959,15 @@ namespace CmdBuffer
             swap_shader(lst, frag);
         }
         apply_anti_alias(lst, in, colors, 2.f);
+    }
+
+    void quad_image(DrawList* lst, Render::FragShader frag, const QuadInput& in, const Vec2f& uv_pos, const Vec2f& uv_size, const Vec4f& color)
+    {
+        if (lst->current.std_data.frag != frag)
+        {
+            swap_shader(lst, frag);
+        }
+        render_quad(lst, in, color, uv_pos, uv_pos + uv_size, no_vert_flags);
     }
 
     // General rendering.

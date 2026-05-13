@@ -1562,6 +1562,55 @@ namespace Glyph
         return new_pos;
     }
 
+    Vec2f RenderFontContext::render_icon_glyph_no_offsets_rotation(CmdBuffer::DrawList* lst,
+                                                                    SpecialGlyph glyph,
+                                                                    float rotation,
+                                                                    const Vec2f& pos,
+                                                                    const Vec4f& color)
+    {
+        Vec2f new_pos = pos;
+
+        const auto& info = font->infos[special_glyph_map[rep(glyph)].index];
+        float x2 = new_pos.x;
+        float y2 = -new_pos.y;
+        float aw = info.aw;
+        float w = info.bw;
+        float h = info.bh;
+
+        // Now that we know the size, we can apply rotation.
+        CmdBuffer::QuadInput quad_in = {
+            .p0123 = {
+                { x2,     -y2 },
+                { x2 + w, -y2 },
+                { x2 + w, -y2 + -h },
+                { x2,     -y2 + -h },
+            }
+        };
+        float cos_a = std::cosf(rotation * 2.f * Constants::pi32);
+        float sin_a = std::sinf(rotation * 2.f * Constants::pi32);
+        Vec2f center = { quad_in.p0123[1].x - quad_in.p0123[0].x, quad_in.p0123[2].y - quad_in.p0123[0].y };
+        center.x = quad_in.p0123[0].x + center.x / 2.f;
+        center.y = quad_in.p0123[2].y - center.y / 2.f;
+        for EachIndex(i, 4)
+        {
+            Vec2f v = quad_in.p0123[i];
+            v = v - center;
+            quad_in.p0123[i].x = center.x + (v.x * cos_a - v.y * sin_a);
+            quad_in.p0123[i].y = center.y + (v.x * sin_a + v.y * cos_a);
+        }
+        CmdBuffer::quad_image(lst,
+                                atlas->data->text_shader,
+                                quad_in,
+                                Vec2f(info.tx, info.ty),
+                                Vec2f((aw) / static_cast<float>(atlas->data->width), (h) / static_cast<float>(atlas->data->height)),
+                                color);
+
+        new_pos.x += info.ax;
+        new_pos.y += info.ay;
+
+        return new_pos;
+    }
+
     Vec2f RenderFontContext::measure_text(String8 text)
     {
         Vec2f size{};

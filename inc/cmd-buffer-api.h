@@ -85,6 +85,7 @@ namespace CmdBuffer
     void line(DrawList* lst, Render::FragShader frag, const Vec2f& a, const Vec2f& b, float thickness, const Vec4f& color);
     void quad(DrawList* lst, Render::FragShader frag, const QuadInput& in, const Vec4f& color);
     void multi_color_quad(DrawList* lst, Render::FragShader frag, const QuadInput& in, const QuadColors& colors);
+    void quad_image(DrawList* lst, Render::FragShader frag, const QuadInput& in, const Vec2f& uv_pos, const Vec2f& uv_size, const Vec4f& color);
 
     // General rendering.
     void render_icon_image(DrawList* lst, Render::FragShader frag, const Vec2f& pos, const Vec2f& size, const Vec2f& uv_pos, const Vec2f& uv_size, const Vec4f& color);
