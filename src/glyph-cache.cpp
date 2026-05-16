@@ -1,6 +1,7 @@
 #include "glyph-cache.h"
 
 #include <cassert>
+#include <cmath>
 
 #include <algorithm>
 
@@ -1586,8 +1587,8 @@ namespace Glyph
                 { x2,     -y2 + -h },
             }
         };
-        float cos_a = std::cosf(rotation * 2.f * Constants::pi32);
-        float sin_a = std::sinf(rotation * 2.f * Constants::pi32);
+        float cos_a = std::cos(rotation * 2.f * Constants::pi32);
+        float sin_a = std::sin(rotation * 2.f * Constants::pi32);
         Vec2f center = { quad_in.p0123[1].x - quad_in.p0123[0].x, quad_in.p0123[2].y - quad_in.p0123[0].y };
         center.x = quad_in.p0123[0].x + center.x / 2.f;
         center.y = quad_in.p0123[2].y - center.y / 2.f;
