@@ -21,6 +21,7 @@ namespace Diff
         UI::Widgets::ID id;
         UI::Widgets::IndexedScrollBox* scroll;
         Glyph::Atlas* atlas;
+        float rotation_period; // For spinners.
     };
 
     namespace
@@ -149,6 +150,12 @@ namespace Diff
         memcpy(widget->diff_counts_side.array, counts.array, sizeof(DiffCount) * counts.size);
     }
 
+    void diff_dir_list_view_update_diff_count(DiffDirListView* widget, DiffCount count, uint64_t idx)
+    {
+        assert(idx < widget->diff_counts_side.size);
+        widget->diff_counts_side.array[idx] = count;
+    }
+
     // Queries.
     String8 diff_dir_list_view_base_dir(DiffDirListView* widget)
     {
@@ -163,6 +170,12 @@ namespace Diff
     MergedFileArray diff_dir_list_view_merged_file_array(DiffDirListView* widget)
     {
         return widget->merged_files;
+    }
+
+    bool diff_dir_list_valid_diff(DiffDirListView* widget, uint64_t file_idx)
+    {
+        assert(file_idx < widget->diff_counts_side.size);
+        return widget->diff_counts_side.array[file_idx] != diff_count_sentinel;
     }
 
     // Building.
@@ -308,19 +321,27 @@ namespace Diff
                 {
                     DiffCount count = widget->diff_counts_side.array[first_l];
                     String8 diff_txt;
-                    if (count.ins != 0)
+                    // Diff not yet processed.
+                    if (count == diff_count_sentinel)
                     {
-                        diff_txt = fmt_string(fmt_buf, "+%I64d", count.ins);
-                        pos = num_pos;
-                        pos = font_ctx.render_text(lst, diff_txt, pos, colors.ins_mark);
+                        font_ctx.render_icon_glyph_no_offsets_rotation(lst, Glyph::SpecialGlyph::Reset, widget->rotation_period, pos, colors.ins_mark);
                     }
-
-                    if (count.del != 0)
+                    else
                     {
-                        diff_txt = fmt_string(fmt_buf, "-%I64d", count.del);
-                        pos = num_pos;
-                        pos.x += largest_ins_col_skip;
-                        pos = font_ctx.render_text(lst, diff_txt, pos, colors.del_mark);
+                        if (count.ins != 0)
+                        {
+                            diff_txt = fmt_string(fmt_buf, "+%I64d", count.ins);
+                            pos = num_pos;
+                            pos = font_ctx.render_text(lst, diff_txt, pos, colors.ins_mark);
+                        }
+
+                        if (count.del != 0)
+                        {
+                            diff_txt = fmt_string(fmt_buf, "-%I64d", count.del);
+                            pos = num_pos;
+                            pos.x += largest_ins_col_skip;
+                            pos = font_ctx.render_text(lst, diff_txt, pos, colors.del_mark);
+                        }
                     }
                     num_pos.y -= line_height;
                 }
@@ -412,6 +433,12 @@ namespace Diff
             }
         }
         CmdBuffer::pop_clip(lst);
+        // Advance animations.
+        widget->rotation_period += state->anim_fast_rate * 0.05f;
+        if (widget->rotation_period >= 360.f)
+        {
+            widget->rotation_period = 0.f;
+        }
         return resp;
     }
 } // namespace Diff

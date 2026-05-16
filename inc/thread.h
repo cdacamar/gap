@@ -2,17 +2,24 @@
 
 #include <memory>
 
+#include "enum-utils.h"
 #include "thread-work.h"
 
 namespace Thread
 {
-    template <Enum E>
-    constexpr bool valid_handle(E handle)
+    enum class TaskHandle : uint64_t
     {
-        return handle == E{};
-    }
+        Sentinel = sentinel_for<TaskHandle>
+    };
 
     enum class TaskDurationMS : uint64_t { };
+
+    struct TaskResult
+    {
+        void* task_data; // Not null if completed.
+        TaskDurationMS ms;
+        bool being_cancelled;
+    };
 
     class ThreadPool
     {
@@ -32,10 +39,13 @@ namespace Thread
         void async_notify();
 
         // Queuing tasks.
+        TaskHandle background_task(void* task_data, ThreadWorkFn work_fn);
 
         // Retrieving results.
+        TaskResult result_if_complete(TaskHandle task);
 
         // Task cancellation.
+        void cancel_task(TaskHandle task);
 
         // Queries.
         uint64_t thread_count() const;

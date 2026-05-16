@@ -4,11 +4,13 @@
 
 #include "basic-button.h"
 #include "basic-window.h"
+#include "concurrent-queue.h"
 #include "diff-dir-list.h"
 #include "diff-panel.h"
 #include "diff-text.h"
 #include "gap-core.h"
 #include "os.h"
+#include "thread.h"
 #include "timers.h"
 #include "tooltips.h"
 
@@ -47,6 +49,57 @@ namespace Diff
             MergedDiffView* file_line_diffs[2];
             MergedTextBlocks* file_text_block_diffs[2];
             uint64_t size;
+        };
+
+        struct DiffDirThreadChunk
+        {
+            Arena::Arena* arena;
+            Thread::ConcurrentQueue* ccq;
+            DiffCount* diff_counts_slice;
+            MergedDiffView* diff_lines_slice[2];
+            MergedTextBlocks* diff_text_slice[2];
+            TextFile* files_slice_A;
+            TextFile* files_slice_B;
+            uint64_t slice_count;
+            uint64_t largest_ins; // Atomically updated/read.
+            uint64_t largest_del; // Atomically updated/read.
+            bool word_based_diff;
+        };
+
+        enum class DiffDirThreadState : uint32_t
+        {
+            Computed,
+            Computing
+        };
+
+        struct DiffDirFiles
+        {
+            TextFile* files;
+            uint64_t size;
+        };
+
+        struct DiffDirThreadData
+        {
+            DiffDirThreadData* next;
+            DiffDirThreadData* prev;
+            Arena::Arena** arenas;
+            Thread::ConcurrentQueue* queues;     // These provide indices into computed_diff_counts.
+            DiffDirThreadChunk* diff_chunks;
+            DiffCountArray computed_diff_counts; // Completion markers.
+            DiffDirDiffCache diff_cache;
+            uint64_t size;
+            DiffDirFiles files_A;
+            DiffDirFiles files_B;
+            Thread::TaskHandle* async_tasks;
+            Timers::Stopwatch sw;
+            DiffDirThreadState state;
+        };
+
+        struct DiffDirThreadDataList
+        {
+            DiffDirThreadData* first;
+            DiffDirThreadData* last;
+            uint64_t count;
         };
 
         PartitionDirPanel* null_dir_panel()
@@ -219,9 +272,249 @@ namespace Diff
         PartitionDirPanel B;
         DiffDirDiffCache diff_cache;
         SelectedDiffFile selected_file;
+        DiffDirThreadData* thread_data;
+        DiffDirThreadData* free_thread_lst;
+        DiffDirThreadDataList thread_data_lst;
+        DiffDirThreadDataList cancelled_thread_data_lst;
         DiffDirPanelUIData ui_data;
         bool word_based_diff;
     };
+
+    namespace
+    {
+        DiffDirThreadData* diff_dir_panel_make_thread_data(DiffDirPanel* panel)
+        {
+            DiffDirThreadData* result = panel->free_thread_lst;
+            if (result != nullptr)
+            {
+                SLLStackPop(panel->free_thread_lst);
+                for EachIndex(i, result->size)
+                {
+                    Arena::clear(result->arenas[i]);
+                }
+                // Reset state.
+                result->state = DiffDirThreadState::Computed;
+                result->next = result->prev = nullptr;
+            }
+            else
+            {
+                result = Arena::push_array<DiffDirThreadData>(panel->arena, 1);
+                // Allocate pools based on thread concurrency.
+                Thread::ThreadPool* pool = Thread::system_thread_pool();
+                result->size = pool->thread_count();
+                Arena::Arena* first_arena = Arena::alloc(Arena::default_params);
+                result->arenas = Arena::push_array<Arena::Arena*>(first_arena, result->size);
+                result->arenas[0] = first_arena;
+                for (uint64_t i = 1; i < result->size; ++i)
+                {
+                    result->arenas[i] = Arena::alloc(Arena::default_params);
+                }
+            }
+            DLLPushBack(panel->thread_data_lst.first, panel->thread_data_lst.last, result);
+            ++panel->thread_data_lst.count;
+            return result;
+        }
+
+        void diff_dir_panel_release_thread_data(DiffDirPanel* panel, DiffDirThreadDataList* lst, DiffDirThreadData* td)
+        {
+            DLLRemove(lst->first, lst->last, td);
+            --lst->count;
+            SLLStackPush(panel->free_thread_lst, td);
+        }
+
+        void diff_dir_panel_cancel_thread_data(DiffDirPanel* panel, DiffDirThreadData* td)
+        {
+            // Kill all working threads.
+            Thread::ThreadPool* pool = Thread::system_thread_pool();
+            for EachIndex(i, td->size)
+            {
+                Thread::TaskHandle handle = td->async_tasks[i];
+                if (handle != Thread::TaskHandle::Sentinel)
+                {
+                    pool->cancel_task(handle);
+                }
+            }
+            // Remove from active list and place on cancelled list.
+            DLLRemove(panel->thread_data_lst.first, panel->thread_data_lst.last, td);
+            --panel->thread_data_lst.count;
+            DLLPushBack(panel->cancelled_thread_data_lst.first, panel->cancelled_thread_data_lst.last, td);
+            ++panel->cancelled_thread_data_lst.count;
+        }
+
+        void diff_dir_panel_populate_thread_data_text_file_paths(Arena::Arena* arena, DiffDirPanel* panel, DiffDirThreadData* td)
+        {
+            MergedFileArray merged_files_A = diff_dir_list_view_merged_file_array(panel->A.view);
+            MergedFileArray merged_files_B = diff_dir_list_view_merged_file_array(panel->B.view);
+            td->files_A.size = merged_files_A.size;
+            td->files_B.size = merged_files_B.size;
+            td->files_A.files = Arena::push_array<TextFile>(arena, td->files_A.size);
+            td->files_B.files = Arena::push_array<TextFile>(arena, td->files_B.size);
+            assert(td->files_A.size == td->files_B.size);
+            for EachIndex(i, td->files_A.size)
+            {
+                td->files_A.files[i] = merged_files_A.array[i].file;
+                td->files_B.files[i] = merged_files_B.array[i].file;
+                // Copy the paths to our arena.
+                td->files_A.files[i].path = str8_copy(arena, td->files_A.files[i].path);
+                td->files_B.files[i].path = str8_copy(arena, td->files_B.files[i].path);
+            }
+        }
+
+        void diff_dir_panel_thread_work(Thread::ThreadWorkData* td)
+        {
+            DiffDirThreadChunk* td_chunk = static_cast<DiffDirThreadChunk*>(td->data);
+            auto scratch = Arena::scratch_begin({ &td_chunk->arena, 1 });
+            for EachIndex(i, td_chunk->slice_count)
+            {
+                auto tmp = Arena::temp_begin(scratch.arena);
+                TextFile* file_A = &td_chunk->files_slice_A[i];
+                TextFile* file_B = &td_chunk->files_slice_B[i];
+                if (file_A->path.size != 0)
+                {
+                    *file_A = text_file_read(td_chunk->arena, file_A->path);
+                }
+
+                if (file_B->path.size != 0)
+                {
+                    *file_B = text_file_read(td_chunk->arena, file_B->path);
+                }
+
+                DiffFileForViewInput in = {
+                    .A = file_A,
+                    .B = file_B,
+                    .word_based_diff = td_chunk->word_based_diff,
+                };
+                DiffFileForViewResult result = diff_panel_diff_files_for_view(tmp.arena, in);
+                // Cache it.
+                td_chunk->diff_lines_slice[0][i] = diff_text_view_join_merged_line_list(td_chunk->arena, result.lst_A);
+                td_chunk->diff_lines_slice[1][i] = diff_text_view_join_merged_line_list(td_chunk->arena, result.lst_B);
+                td_chunk->diff_text_slice[0][i] = diff_text_view_join_merged_text_blocks_list(td_chunk->arena, result.merged_txt_A, *file_A);
+                td_chunk->diff_text_slice[1][i] = diff_text_view_join_merged_text_blocks_list(td_chunk->arena, result.merged_txt_B, *file_B);
+                // Sum diffs.
+                for EachIndex(j, td_chunk->diff_lines_slice[0][i].size)
+                {
+                    MergedLine* line_A = &td_chunk->diff_lines_slice[0][i].lines[j];
+                    MergedLine* line_B = &td_chunk->diff_lines_slice[1][i].lines[j];
+                    td_chunk->diff_counts_slice[i].ins += line_B->type == EditType::Ins;
+                    td_chunk->diff_counts_slice[i].del += line_A->type == EditType::Del;
+                }
+                // Emit maximums.
+                // Note: The read does not need to be atomic on this sice (since we're the only writer)
+                // but the write-back does.
+                uint64_t largest_ins = td_chunk->largest_ins;
+                uint64_t largest_del = td_chunk->largest_del;
+                largest_ins = std::max(largest_ins, td_chunk->diff_counts_slice[i].ins);
+                largest_del = std::max(largest_del, td_chunk->diff_counts_slice[i].del);
+                // Atomic time!
+                os_atomic_u64_eval_assign(&td_chunk->largest_ins, largest_ins);
+                os_atomic_u64_eval_assign(&td_chunk->largest_del, largest_del);
+                // Emit to queue.
+                assert(not Thread::ccq_prod_full(td_chunk->ccq));
+                assert(not Thread::ccq_cons_full(td_chunk->ccq));
+                // Note: The index returned here is immaterial.  All we care about is that we move the
+                // producer side forward.
+                Thread::ccq_prod_push(td_chunk->ccq);
+                Thread::ccq_prod_commit_push(td_chunk->ccq);
+
+                Arena::temp_end(tmp);
+                if (os_atomic_u32_eval(&td->cancellation_flag) != 0)
+                    break;
+            }
+            Arena::scratch_end(scratch);
+        }
+
+        void diff_dir_panel_diff_files_threaded(DiffDirPanel* panel)
+        {
+            if (panel->thread_data == nullptr)
+            {
+                panel->thread_data = diff_dir_panel_make_thread_data(panel);
+            }
+
+            if (panel->thread_data->state != DiffDirThreadState::Computed)
+            {
+                // Cancel existing work and open a new one.
+                diff_dir_panel_cancel_thread_data(panel, panel->thread_data);
+                panel->thread_data = diff_dir_panel_make_thread_data(panel);
+            }
+
+            DiffDirThreadData* td = panel->thread_data;
+
+            // Begin our timer.
+            td->sw.start();
+
+            // Clear old text file caches.
+            Arena::Arena* arena = td->arenas[0];
+            td->files_A = {};
+            td->files_B = {};
+
+            // Reset all arenas.
+            for EachIndex(i, td->size)
+            {
+                Arena::clear(td->arenas[i]);
+                // Reclaim commits.
+                Arena::shrink_cmt_to_pos(td->arenas[i]);
+            }
+
+            // Populate text files.
+            diff_dir_panel_populate_thread_data_text_file_paths(arena, panel, td);
+
+            // Create diff cache.
+            td->diff_cache = {};
+            Arena::clear(arena);
+            td->diff_cache.size = td->files_A.size;
+            td->diff_cache.file_line_diffs[0] = Arena::push_array<MergedDiffView>(arena, td->diff_cache.size);
+            td->diff_cache.file_line_diffs[1] = Arena::push_array<MergedDiffView>(arena, td->diff_cache.size);
+            td->diff_cache.file_text_block_diffs[0] = Arena::push_array<MergedTextBlocks>(arena, td->diff_cache.size);
+            td->diff_cache.file_text_block_diffs[1] = Arena::push_array<MergedTextBlocks>(arena, td->diff_cache.size);
+
+            // Set up chunks.
+            uint64_t diff_chunk_size = td->files_A.size / td->size;
+
+            // Note: This must account for leftovers.
+            uint64_t mod_val = std::max(diff_chunk_size, td->size);
+            uint64_t diff_chunk_leftover = td->files_A.size % mod_val;
+
+            // Create output queues.
+            uint64_t thread_ccq_size = diff_chunk_size + diff_chunk_leftover;
+            td->queues = Arena::push_array<Thread::ConcurrentQueue>(arena, td->size);
+            td->computed_diff_counts.size = td->files_A.size;
+            td->computed_diff_counts.array = Arena::push_array<DiffCount>(arena, td->computed_diff_counts.size);
+            for EachIndex(i, td->size)
+            {
+                td->queues[i] = Thread::make_concurrent_queue(static_cast<uint32_t>(thread_ccq_size));
+            }
+            // Note: We actually don't care about the diff count state.  That property is marked as we complete them.
+            td->diff_chunks = Arena::push_array<DiffDirThreadChunk>(arena, td->size);
+            for EachIndex(i, td->size)
+            {
+                td->diff_chunks[i].arena = td->arenas[i];
+                td->diff_chunks[i].ccq = &td->queues[i];
+                td->diff_chunks[i].diff_counts_slice = td->computed_diff_counts.array + i * diff_chunk_size;
+                td->diff_chunks[i].diff_lines_slice[0] = td->diff_cache.file_line_diffs[0] + i * diff_chunk_size;
+                td->diff_chunks[i].diff_lines_slice[1] = td->diff_cache.file_line_diffs[1] + i * diff_chunk_size;
+                td->diff_chunks[i].diff_text_slice[0] = td->diff_cache.file_text_block_diffs[0] + i * diff_chunk_size;
+                td->diff_chunks[i].diff_text_slice[1] = td->diff_cache.file_text_block_diffs[1] + i * diff_chunk_size;
+                td->diff_chunks[i].files_slice_A = td->files_A.files + i * diff_chunk_size;
+                td->diff_chunks[i].files_slice_B = td->files_B.files + i * diff_chunk_size;
+                td->diff_chunks[i].slice_count = diff_chunk_size;
+                td->diff_chunks[i].largest_ins = 0;
+                td->diff_chunks[i].largest_del = 0;
+            }
+            // Add leftovers.
+            td->diff_chunks[td->size - 1].slice_count += diff_chunk_leftover;
+
+            // Allocate thread handles.
+            Thread::ThreadPool* pool = Thread::system_thread_pool();
+            td->async_tasks = Arena::push_array<Thread::TaskHandle>(arena, td->size);
+            Thread::ThreadWorkFn work_fn = diff_dir_panel_thread_work;
+            for EachIndex(i, td->size)
+            {
+                void* thread_work = &td->diff_chunks[i];
+                td->async_tasks[i] = pool->background_task(thread_work, work_fn);
+            }
+            td->state = DiffDirThreadState::Computing;
+        }
+    } // namespace [anon]
 
     // Creation.
     DiffDirPanel* make_diff_dir_panel(Glyph::Atlas* atlas)
@@ -595,7 +888,86 @@ namespace Diff
         return panel->selected_file != SelectedDiffFile::Sentinel;
     }
 
-    void diff_dir_panel_prev_diff(DiffDirPanel* panel, Feed::MessageFeed* feed);
+    void diff_dir_panel_sync_thread_data(DiffDirPanel* panel, Feed::MessageFeed* feed)
+    {
+        if (panel->thread_data == nullptr)
+            return;
+        if (panel->thread_data->state == DiffDirThreadState::Computed)
+            return;
+        // Identify handles still in-progress.
+        Thread::ThreadPool* pool = Thread::system_thread_pool();
+        bool all_completed = true;
+        for EachIndex(i, panel->thread_data->size)
+        {
+            Thread::TaskHandle async_work = panel->thread_data->async_tasks[i];
+            // This thread is done.
+            if (async_work == Thread::TaskHandle::Sentinel)
+                continue;
+            Thread::TaskResult result = pool->result_if_complete(async_work);
+            if (result.task_data)
+            {
+                {
+                    char fmt_buf[100];
+                    String8 msg = fmt_string(fmt_buf, "Thread[%I64d] computed diffs in %I64dms.", i, rep(result.ms));
+                    feed->queue_info(msg);
+                }
+                // Clear the work.
+                panel->thread_data->async_tasks[i] = Thread::TaskHandle::Sentinel;
+            }
+            else
+            {
+                // Still working...
+                all_completed = false;
+            }
+        }
+        // Pull results from the queues.
+        // Pull a max of the first queue (they're all the same size).
+        uint32_t max_ccq_check = panel->thread_data->queues[0].capacity;
+        {
+            PROF_SCOPE();
+            for EachIndex(i, panel->thread_data->size)
+            {
+                DiffDirThreadChunk* chunk = &panel->thread_data->diff_chunks[i];
+                for EachIndex(j, max_ccq_check)
+                {
+                    if (not Thread::ccq_cons_empty(chunk->ccq))
+                    {
+                        uint32_t idx = Thread::ccq_cons_shift(chunk->ccq);
+                        DiffCount count = chunk->diff_counts_slice[idx];
+                        Thread::ccq_cons_commit_shift(chunk->ccq);
+                        // Create full index.
+                        uint64_t full_idx = idx + (chunk->diff_counts_slice - panel->thread_data->computed_diff_counts.array);
+                        // Update UI.
+                        diff_dir_list_view_update_diff_count(panel->A.view, count, full_idx);
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (all_completed)
+        {
+            panel->thread_data->sw.stop();
+            char fmt_buf[100];
+            String8 msg = fmt_string(fmt_buf, "Diffs completed in %I64dms.", panel->thread_data->sw.to_ms());
+            feed->queue_info(msg);
+#if BUILD_DEBUG
+            // Verify we actually pulled everything.
+            for EachIndex(i, panel->thread_data->size)
+            {
+                assert(Thread::ccq_cons_empty(&panel->thread_data->queues[i]));
+            }
+#endif // BUILD_DEBUG
+        }
+        else
+        {
+            // Keep requesting frames until done.
+            Render::request_frames();
+        }
+    }
 
     // Queries.
     DiffDirDiffResults diff_dir_panel_cached_diffs(DiffDirPanel* panel, uint64_t diff_idx)
@@ -626,7 +998,7 @@ namespace Diff
                                                 CmdBuffer::CmdList* cmd_lst,
                                                 CmdBuffer::DrawList* core_lst,
                                                 UI::UIState* state,
-                                                Feed::MessageFeed*)
+                                                Feed::MessageFeed* feed)
     {
         PROF_SCOPE();
 
@@ -811,8 +1183,16 @@ namespace Diff
             scroll_changed[scroll_idx++] = r.scroll_changed ? child->view : nullptr;
             if (r.pop_to_diff)
             {
-                resp.pop_to_diff = true;
-                resp.diff_idx = r.file_idx;
+                // Validate that the diff is actually computed.
+                if (diff_dir_list_valid_diff(panel->A.view, resp.diff_idx))
+                {
+                    resp.pop_to_diff = true;
+                    resp.diff_idx = r.file_idx;
+                }
+                else
+                {
+                    feed->queue_info("Diff still computing...");
+                }
                 panel->selected_file = SelectedDiffFile{ r.file_idx };
             }
 

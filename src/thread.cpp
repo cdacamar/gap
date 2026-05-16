@@ -17,21 +17,12 @@ namespace Thread
             uint64_t count;
         };
 
-        enum class TaskSort
-        {
-            DummyTask,
-            Invalid,
-            Count = Invalid
-        };
+        struct TaskResultEntry;
 
         struct TaskListEntry
         {
             TaskListEntry* next;
-            union
-            {
-                int dummy;
-            };
-            TaskSort sort;
+            TaskResultEntry* result;
         };
 
         struct TaskList
@@ -42,10 +33,39 @@ namespace Thread
             uint64_t count;
         };
 
-        template <typename H>
-        void push_task(Arena::Arena* arena, TaskList* lst, H handle)
+        struct TaskResultEntry
         {
-            assert(handle);
+            TaskResultEntry* next;
+            TaskResultEntry* prev;
+            ThreadWorkData thread_work_data;
+            uint32_t completion_flag;
+        };
+
+        struct TaskResultList
+        {
+            TaskResultEntry* first;
+            TaskResultEntry* last;
+            uint64_t count;
+        };
+
+        struct TaskResults
+        {
+            TaskResultList results;
+            TaskResultEntry* free_lst;
+        };
+
+        TaskHandle thread_task_as_handle(TaskResultEntry* h)
+        {
+            return TaskHandle{ reinterpret_cast<uint64_t>(h) };
+        }
+
+        TaskResultEntry* thread_handle_as_task(TaskHandle h)
+        {
+            return reinterpret_cast<TaskResultEntry*>(h);
+        }
+
+        void push_task(Arena::Arena* arena, TaskList* lst, TaskResultEntry* result)
+        {
             TaskListEntry* entry = nullptr;
             if (lst->free_lst != nullptr)
             {
@@ -57,7 +77,7 @@ namespace Thread
             {
                 entry = Arena::push_array<TaskListEntry>(arena, 1);
             }
-            fill_task(entry, std::move(handle));
+            entry->result = result;
             SLLQueuePush(lst->first, lst->last, entry);
             ++lst->count;
         }
@@ -76,37 +96,7 @@ namespace Thread
             return lst.count != 0;
         }
 
-        struct TaskResultEntry
-        {
-            TaskResultEntry* next;
-            TaskResultEntry* prev;
-            void* task_data;
-            void* core_completion;
-            // Note: Sort is not required because these are already separated into
-            // lists by type.
-            Timers::Stopwatch sw;
-        };
-
-        bool complete(TaskResultEntry* result)
-        {
-            return result->core_completion != nullptr;
-        }
-
-        struct TaskResultList
-        {
-            TaskResultEntry* first;
-            TaskResultEntry* last;
-            uint64_t count;
-        };
-
-        struct TaskResults
-        {
-            TaskResultList results[count_of<TaskSort>];
-            TaskResultEntry* free_lst;
-        };
-
-        template <typename T>
-        TaskResultEntry* reserve_result_entry_slot(Arena::Arena* arena, TaskResults* results, T* task)
+        TaskResultEntry* reserve_result_entry_slot(Arena::Arena* arena, TaskResults* results, ThreadWorkData data)
         {
             TaskResultEntry* entry = nullptr;
             if (results->free_lst != nullptr)
@@ -119,16 +109,16 @@ namespace Thread
             {
                 entry = Arena::push_array<TaskResultEntry>(arena, 1);
             }
-            entry->task_data = task;
-            TaskResultList* lst = &results->results[rep(task_sort_for(task))];
+            entry->thread_work_data = data;
+            TaskResultList* lst = &results->results;
             DLLPushBack(lst->first, lst->last, entry);
             ++lst->count;
             return entry;
         }
 
-        void release_result_entry(TaskResults* results, TaskSort sort, TaskResultEntry* entry)
+        void release_result_entry(TaskResults* results, TaskResultEntry* entry)
         {
-            TaskResultList* lst = &results->results[rep(sort)];
+            TaskResultList* lst = &results->results;
             assert(lst->count != 0);
             DLLRemove(lst->first, lst->last, entry);
             --lst->count;
@@ -159,7 +149,7 @@ namespace Thread
             ThreadPool::Data* data = static_cast<ThreadPool::Data*>(data_p);
             while (true)
             {
-                TaskListEntry entry{ .sort = TaskSort::Invalid };
+                TaskListEntry entry = {};
                 {
                     OS::lock_mutex(data->queue_mutex);
                     // Wait to be woken up again.
@@ -185,34 +175,17 @@ namespace Thread
                     OS::unlock_mutex(data->queue_mutex);
                 }
                 // Do work.
-                assert(entry.sort != TaskSort::Invalid);
+                assert(entry.result != nullptr);
                 Timers::Stopwatch sw;
                 sw.start();
-                ENABLE_UNHANDLED_CASE_WARNING();
-                switch (entry.sort)
-                {
-                case TaskSort::DummyTask:
-                case TaskSort::Invalid:
-                    assert(false);
-                    break;
-                }
-                DISABLE_UNHANDLED_CASE_WARNING();
+                entry.result->thread_work_data.work_fn(&entry.result->thread_work_data);
                 sw.stop();
                 // Update result slot.
                 {
                     OS::lock_mutex(data->result_mutex);
-                    ENABLE_UNHANDLED_CASE_WARNING();
-                    TaskResultEntry* result_handle = nullptr;
-                    switch (entry.sort)
-                    {
-                    case TaskSort::DummyTask:
-                    case TaskSort::Invalid:
-                        assert(false);
-                        break;
-                    }
-                    DISABLE_UNHANDLED_CASE_WARNING();
-                    result_handle->core_completion = result_handle;
-                    result_handle->sw = sw;
+                    TaskResultEntry* result_handle = entry.result;
+                    result_handle->thread_work_data.sw = sw;
+                    os_atomic_u32_eval_assign(&result_handle->completion_flag, 1);
                     OS::unlock_mutex(data->result_mutex);
                 }
 #if BUILD_DEBUG
@@ -276,6 +249,58 @@ namespace Thread
         os_atomic_u32_eval_assign(&data->execute_async, 1);
         // Also wake up a thread to do the work.
         OS::notify_one_condition_var(data->queue_condition);
+    }
+
+    // Queuing tasks.
+    TaskHandle ThreadPool::background_task(void* task_data, ThreadWorkFn work_fn)
+    {
+        TaskResultEntry* result = nullptr;
+        {
+            OS::lock_mutex(data->result_mutex);
+            ThreadWorkData t_data = {
+                .data = task_data,
+                .work_fn = work_fn,
+            };
+            result = reserve_result_entry_slot(data->result_arena, &data->results, t_data);
+            OS::unlock_mutex(data->result_mutex);
+        }
+        // Capture the work.
+        {
+            OS::lock_mutex(data->queue_mutex);
+            push_task(data->task_arena, &data->input_queue, result);
+            OS::unlock_mutex(data->queue_mutex);
+        }
+        // Start.
+        OS::notify_one_condition_var(data->queue_condition);
+        return thread_task_as_handle(result);
+    }
+
+    // Retrieving results.
+    TaskResult ThreadPool::result_if_complete(TaskHandle task)
+    {
+        TaskResult result = {};
+        assert(task != TaskHandle::Sentinel);
+        TaskResultEntry* e = thread_handle_as_task(task);
+        result.being_cancelled = os_atomic_u32_eval(&e->thread_work_data.cancellation_flag) != 0;
+        if (os_atomic_u32_eval(&e->completion_flag) != 0)
+        {
+            // Lock and release.
+            OS::lock_mutex(data->result_mutex);
+            result.task_data = e->thread_work_data.data;
+            result.ms = TaskDurationMS{ e->thread_work_data.sw.to_ms() };
+            result.being_cancelled = false;
+            // Release the task.
+            release_result_entry(&data->results, e);
+            OS::unlock_mutex(data->result_mutex);
+        }
+        return result;
+    }
+
+    // Task cancellation.
+    void ThreadPool::cancel_task(TaskHandle task)
+    {
+        assert(task != TaskHandle::Sentinel);
+        os_atomic_u32_eval_assign(&thread_handle_as_task(task)->thread_work_data.cancellation_flag, 1);
     }
 
     uint64_t ThreadPool::thread_count() const

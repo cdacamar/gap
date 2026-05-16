@@ -1,5 +1,6 @@
 #pragma once
 
+#include "constants.h"
 #include "glyph-cache.h"
 #include "ui-common.h"
 
@@ -55,8 +56,15 @@ namespace Diff
 
     struct DiffCount
     {
-        uint64_t ins;
-        uint64_t del;
+        uint64_t ins; // Sentinel value indicates it is not computed.
+        uint64_t del; // Sentinel value indicates it is not computed.
+
+        bool operator==(const DiffCount&) const = default;
+    };
+
+    inline constexpr DiffCount diff_count_sentinel = {
+        .ins = Constants::max_U64,
+        .del = Constants::max_U64,
     };
 
     struct DiffCountArray
@@ -93,11 +101,13 @@ namespace Diff
     void diff_dir_list_view_populate_merged_files(DiffDirListView* widget, MergedFileList lst);
     void diff_dir_list_view_share_scroll_pos(DiffDirListView* widget, const DiffDirListView* share_from);
     void diff_dir_list_view_apply_diff_count_sidebar(DiffDirListView* widget, DiffCountArray counts);
+    void diff_dir_list_view_update_diff_count(DiffDirListView* widget, DiffCount count, uint64_t idx);
 
     // Queries.
     String8 diff_dir_list_view_base_dir(DiffDirListView* widget);
     DirFileArray diff_dir_list_view_file_array(DiffDirListView* widget);
     MergedFileArray diff_dir_list_view_merged_file_array(DiffDirListView* widget);
+    bool diff_dir_list_valid_diff(DiffDirListView* widget, uint64_t file_idx);
 
     // Building.
     DiffDirListViewResponse build_diff_dir_list_view(DiffDirListView* widget,

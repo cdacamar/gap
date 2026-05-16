@@ -1665,6 +1665,9 @@ int gap_main_entry(int argc, char** argv)
         if (Render::frames_remaining() <= 0)
             continue;
 
+        // Sync thread data.
+        Diff::diff_dir_panel_sync_thread_data(diff_dir_panel, &message_feed);
+
         // Core rendering.
         {
             render_core(&render_core_data);
