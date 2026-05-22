@@ -283,6 +283,11 @@ namespace OS
     {
       data->start_time_ns = clock_gettime_nsec_np(CLOCK_REALTIME);
       data->double_click_time = Ticks{ 500 };
+
+      [NSApplication sharedApplication];
+      [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
+      [NSApp finishLaunching]; 
+
       return true;
     }
 
@@ -401,6 +406,8 @@ namespace OS
     OSWindow result = OSWindow::Sentinel;
     @autoreleasepool
     {
+      wind_rect.x = wind_rect.x == default_window_pos.x ? 0 : wind_rect.x;
+      wind_rect.y = wind_rect.y == default_window_pos.y ? 0 : wind_rect.y;
       float scale = 1.0/NSScreen.mainScreen.backingScaleFactor;
       NSRect rect = NSMakeRect(wind_rect.x*scale, wind_rect.y*scale, wind_rect.z*scale, wind_rect.a*scale);
       NSUInteger mask = NSWindowStyleMaskTitled |
@@ -420,7 +427,6 @@ namespace OS
       ns_window.delegate = ns_window;
       [ns_window setAcceptsMouseMovedEvents:YES];
       [NSApp activateIgnoringOtherApps:YES];
-      [ns_window makeKeyAndOrderFront:nil];
       result = os_window(ns_window);
 
       //- brt: equip renderer
@@ -428,6 +434,8 @@ namespace OS
       {
         result = OSWindow::Sentinel;
       }
+
+      [ns_window makeKeyAndOrderFront:nil];
     }
     return result;
   }

@@ -6,10 +6,31 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		8B5660D12FBDE6BF00FAD5D6 /* inc */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = inc;
+			sourceTree = "<group>";
+		};
+		8B5661032FBDE6CD00FAD5D6 /* src */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = src;
+			sourceTree = "<group>";
+		};
+		8B5661192FBDE6D700FAD5D6 /* shaders */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = shaders;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
 /* Begin PBXGroup section */
 		8B5660892FBDE65100FAD5D6 = {
 			isa = PBXGroup;
 			children = (
+				8B5661192FBDE6D700FAD5D6 /* shaders */,
+				8B5661032FBDE6CD00FAD5D6 /* src */,
+				8B5660D12FBDE6BF00FAD5D6 /* inc */,
 			);
 			sourceTree = "<group>";
 		};
