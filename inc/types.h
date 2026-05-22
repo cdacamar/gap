@@ -179,7 +179,8 @@ namespace OS
         Shift   = 1u << 0,
         Alt     = 1u << 1,
         Ctrl    = 1u << 2,
-        AnyDown = Shift | Alt | Ctrl,
+        Cmd     = 1u << 3,
+        AnyDown = Shift | Alt | Ctrl | Cmd,
     };
 
     enum class EventSort
@@ -341,6 +342,7 @@ namespace OS
         LeftMouseButton,
         MiddleMouseButton,
         RightMouseButton,
+        Command,
         Count
     };
 

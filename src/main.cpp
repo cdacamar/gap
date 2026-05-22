@@ -467,6 +467,8 @@ KeyDownResult ui_key_down(const OS::Event& e, UIState* state, RenderCoreData* da
     case OS::Key::Ctrl:
         state->mods |= KeyMods::Ctrl;
         break;
+    case OS::Key::Command:
+        state->mods |= KeyMods::Cmd;
     }
 
     // Process hotkeys.
@@ -484,7 +486,8 @@ KeyDownResult ui_key_down(const OS::Event& e, UIState* state, RenderCoreData* da
         if (e.key != OS::Key::Esc
             and e.key != OS::Key::Shift
             and e.key != OS::Key::Alt
-            and e.key != OS::Key::Ctrl)
+            and e.key != OS::Key::Ctrl
+            and e.key != OS::Key::Command)
         {
             if (state->hotkeys.rebind_target != Hotkey::None)
             {
@@ -530,6 +533,8 @@ void ui_key_up(const OS::Event& e, UIState* state)
         break;
     case OS::Key::Ctrl:
         state->mods = remove_flag(state->mods, KeyMods::Ctrl);
+    case OS::Key::Command:
+        state->mods = remove_flag(state->mods, KeyMods::Cmd);
         break;
     }
 }

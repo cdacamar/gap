@@ -255,7 +255,7 @@ namespace Render
     //- brt: init metal
     rend_data->mtl_device = MTLCreateSystemDefaultDevice();
     rend_data->mtl_command_queue = [rend_data->mtl_device newCommandQueue];
-    rend_data->scratch_buffer_64k = [rend_data->mtl_device newBufferWithLength:KB(16) options:MTLResourceStorageModeShared];
+    rend_data->scratch_buffer_64k = [rend_data->mtl_device newBufferWithLength:KB(64) options:MTLResourceStorageModeShared];
 
     //- brt: setup uniform defaults
     {
@@ -496,10 +496,10 @@ namespace Render
       {
         CmdBuffer::DrawList* lst = lst_n->lst;
 
-        MetalAlloc mtl_verts = metal_push_aligned(lst->vert_buf.count * sizeof(CmdBuffer::DrawVertex), 256);
+        MetalAlloc mtl_verts = metal_push_aligned(lst->vert_buf.count * sizeof(CmdBuffer::DrawVertex), 16);
         memcpy(mtl_verts.v, lst->vert_buf.buf, lst->vert_buf.count * sizeof(CmdBuffer::DrawVertex));
 
-        MetalAlloc mtl_indices = metal_push_aligned(lst->idx_buf.count * sizeof(CmdBuffer::Index), 256);
+        MetalAlloc mtl_indices = metal_push_aligned(lst->idx_buf.count * sizeof(CmdBuffer::Index), 16);
         memcpy(mtl_indices.v, lst->idx_buf.buf, lst->idx_buf.count * sizeof(CmdBuffer::Index));
 
         ScreenDimensions res = lst->screen;

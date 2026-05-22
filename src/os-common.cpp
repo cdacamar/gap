@@ -368,6 +368,8 @@ namespace OS
             return str8_mut(str8_literal("Key::MiddleMouseButton"));
         case Key::RightMouseButton:
             return str8_mut(str8_literal("Key::RightMouseButton"));
+        case Key::Command:
+            return str8_mut(str8_literal("Key::Command"));
         case Key::Count:
             return str8_mut(str8_literal("Key::Count"));
         }

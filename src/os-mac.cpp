@@ -157,11 +157,9 @@ namespace OS
       DirIterDataAlloc dir_iter_data_alloc;
       Ticks double_click_time;
       bool fullscreened;
-
-      //- brt: Cocoa
+      Arena::Arena *events_arena;
+      Events *events;
       OSMacWindow *wind;
-
-      //- brt: Metal
     };
 
     MacBackendData impl_data;
@@ -282,7 +280,8 @@ namespace OS
     bool init_mac(MacBackendData *data)
     {
       data->start_time_ns = clock_gettime_nsec_np(CLOCK_REALTIME);
-      data->double_click_time = Ticks{ 500 };
+      uint32_t double_click_time_ms = (uint32_t)([NSEvent doubleClickInterval] * 1000.0);
+      data->double_click_time = Ticks{ double_click_time_ms };
 
       [NSApplication sharedApplication];
       [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
@@ -291,15 +290,168 @@ namespace OS
       return true;
     }
 
-    Event *push_event(Arena::Arena *arena, Events *lst, EventSort sort, OSWindow window)
+    KeyMods os_mac_get_modifiers()
     {
-      Event *e = Arena::push_array<Event>(arena, 1);
+      KeyMods modifiers = KeyMods::None;
+      CGEventFlags flags = CGEventSourceFlagsState(kCGEventSourceStateCombinedSessionState);
+      if (flags & kCGEventFlagMaskControl)
+      {
+        modifiers |= KeyMods::Ctrl;
+      }
+      if (flags & kCGEventFlagMaskShift)
+      {
+        modifiers |= KeyMods::Shift;
+      }
+      if (flags & kCGEventFlagMaskAlternate)
+      {
+        modifiers |= KeyMods::Alt;
+      }
+      if (flags & kCGEventFlagMaskCommand)
+      {
+        modifiers |= KeyMods::Cmd;
+      }
+      return modifiers;
+    }
+
+    Event *push_event(EventSort sort, OSWindow window)
+    {
+      MacBackendData *data = mac_data();
+      Event *e = Arena::push_array<Event>(data->events_arena, 1);
       e->sort = sort;
       e->window = window;
-      SLLQueuePush(lst->first, lst->last, e);
-      ++lst->count;
+      e->modifiers = os_mac_get_modifiers();
+      SLLQueuePush(data->events->first, data->events->last, e);
+      ++data->events->count;
       return e;
     }
+
+    Key os_mac_os_key_from_vkey( uint32_t vkey )
+    {
+      static bool first = true;
+      static Key key_table[512] = {};
+      if (first)
+      {
+        first = false;
+        key_table[kVK_ANSI_A] = Key::A;
+        key_table[kVK_ANSI_B] = Key::B;
+        key_table[kVK_ANSI_C] = Key::C;
+        key_table[kVK_ANSI_D] = Key::D;
+        key_table[kVK_ANSI_E] = Key::E;
+        key_table[kVK_ANSI_F] = Key::F;
+        key_table[kVK_ANSI_G] = Key::G;
+        key_table[kVK_ANSI_H] = Key::H;
+        key_table[kVK_ANSI_I] = Key::I;
+        key_table[kVK_ANSI_J] = Key::J;
+        key_table[kVK_ANSI_K] = Key::K;
+        key_table[kVK_ANSI_L] = Key::L;
+        key_table[kVK_ANSI_M] = Key::M;
+        key_table[kVK_ANSI_N] = Key::N;
+        key_table[kVK_ANSI_O] = Key::O;
+        key_table[kVK_ANSI_P] = Key::P;
+        key_table[kVK_ANSI_Q] = Key::Q;
+        key_table[kVK_ANSI_R] = Key::R;
+        key_table[kVK_ANSI_S] = Key::S;
+        key_table[kVK_ANSI_T] = Key::T;
+        key_table[kVK_ANSI_U] = Key::U;
+        key_table[kVK_ANSI_V] = Key::V;
+        key_table[kVK_ANSI_W] = Key::W;
+        key_table[kVK_ANSI_X] = Key::X;
+        key_table[kVK_ANSI_Y] = Key::Y;
+        key_table[kVK_ANSI_Z] = Key::Z;
+        key_table[kVK_ANSI_0] = Key::_0;
+        key_table[kVK_ANSI_1] = Key::_1;
+        key_table[kVK_ANSI_2] = Key::_2;
+        key_table[kVK_ANSI_3] = Key::_3;
+        key_table[kVK_ANSI_4] = Key::_4;
+        key_table[kVK_ANSI_5] = Key::_5;
+        key_table[kVK_ANSI_6] = Key::_6;
+        key_table[kVK_ANSI_7] = Key::_7;
+        key_table[kVK_ANSI_8] = Key::_8;
+        key_table[kVK_ANSI_9] = Key::_9;
+        key_table[kVK_ANSI_Keypad0] = Key::Num0;
+        key_table[kVK_ANSI_Keypad1] = Key::Num1;
+        key_table[kVK_ANSI_Keypad2] = Key::Num2;
+        key_table[kVK_ANSI_Keypad3] = Key::Num3;
+        key_table[kVK_ANSI_Keypad4] = Key::Num4;
+        key_table[kVK_ANSI_Keypad5] = Key::Num5;
+        key_table[kVK_ANSI_Keypad6] = Key::Num6;
+        key_table[kVK_ANSI_Keypad7] = Key::Num7;
+        key_table[kVK_ANSI_Keypad8] = Key::Num8;
+        key_table[kVK_ANSI_Keypad9] = Key::Num9;
+        key_table[kVK_F1] = Key::F1;
+        key_table[kVK_F2] = Key::F2;
+        key_table[kVK_F3] = Key::F3;
+        key_table[kVK_F4] = Key::F4;
+        key_table[kVK_F5] = Key::F5;
+        key_table[kVK_F6] = Key::F6;
+        key_table[kVK_F7] = Key::F7;
+        key_table[kVK_F8] = Key::F8;
+        key_table[kVK_F9] = Key::F9;
+        key_table[kVK_F10] = Key::F10;
+        key_table[kVK_F11] = Key::F11;
+        key_table[kVK_F12] = Key::F12;
+        key_table[kVK_F13] = Key::F13;
+        key_table[kVK_F14] = Key::F14;
+        key_table[kVK_F15] = Key::F15;
+        key_table[kVK_F16] = Key::F16;
+        key_table[kVK_F17] = Key::F17;
+        key_table[kVK_F18] = Key::F18;
+        key_table[kVK_F19] = Key::F19;
+        key_table[kVK_F20] = Key::F20;
+
+        // --- Punctuation and symbols ---
+        key_table[kVK_Space]           = Key::Space;
+        key_table[kVK_ANSI_Grave]      = Key::Tick;          // ` (same as VK_OEM_3)
+        key_table[kVK_ANSI_Minus]      = Key::Minus;         // -
+        key_table[kVK_ANSI_Equal]      = Key::Equal;         // =
+        key_table[kVK_ANSI_LeftBracket]= Key::LeftBracket;   // [
+        key_table[kVK_ANSI_RightBracket]=Key::RightBracket;  // ]
+        key_table[kVK_ANSI_Semicolon]  = Key::Semicolon;     // ;
+        key_table[kVK_ANSI_Quote]      = Key::Quote;         // '
+        key_table[kVK_ANSI_Comma]      = Key::Comma;         // ,
+        key_table[kVK_ANSI_Period]     = Key::Period;        // .
+        key_table[kVK_ANSI_Slash]      = Key::Slash;         // /
+        key_table[kVK_ANSI_Backslash]  = Key::BackSlash;     // \
+
+        // --- Control / function keys ---
+        key_table[kVK_Tab]             = Key::Tab;
+        key_table[kVK_Escape]          = Key::Esc;
+        key_table[kVK_Return]          = Key::Return;
+        key_table[kVK_Delete]          = Key::Backspace;     // Backspace (Delete on Mac)
+        key_table[kVK_ForwardDelete]   = Key::Delete;        // Forward delete (fn+Delete)
+        key_table[kVK_Help]            = Key::Insert;        // Insert = Help key on extended keyboard
+
+        key_table[kVK_PageUp]          = Key::PageUp;
+        key_table[kVK_PageDown]        = Key::PageDown;
+        key_table[kVK_Home]            = Key::Home;
+        key_table[kVK_End]             = Key::End;
+
+        key_table[kVK_UpArrow]         = Key::Up;
+        key_table[kVK_LeftArrow]       = Key::Left;
+        key_table[kVK_DownArrow]       = Key::Down;
+        key_table[kVK_RightArrow]      = Key::Right;
+
+        // --- Locks and modifiers ---
+        key_table[kVK_CapsLock]        = Key::CapsLock;
+        key_table[kVK_Function]        = Key::Menu;          // “Fn” often used as Menu-equivalent
+        key_table[kVK_Command]         = Key::Ctrl;          // ⌘ as Ctrl analog
+        key_table[kVK_Control]         = Key::Ctrl;
+        key_table[kVK_RightControl]    = Key::Ctrl;
+        key_table[kVK_Shift]           = Key::Shift;
+        key_table[kVK_RightShift]      = Key::Shift;
+        key_table[kVK_Option]          = Key::Alt;
+        key_table[kVK_RightOption]     = Key::Alt;
+
+        // --- Numeric keypad ---
+        key_table[kVK_ANSI_KeypadDivide]   = Key::NumSlash;
+        key_table[kVK_ANSI_KeypadMultiply] = Key::NumStar;
+        key_table[kVK_ANSI_KeypadMinus]    = Key::NumMinus;
+        key_table[kVK_ANSI_KeypadPlus]     = Key::NumPlus;
+        key_table[kVK_ANSI_KeypadDecimal]  = Key::NumPeriod;
+      }
+      return key_table[vkey];
+    }
+
 
     Mutex os_mutex(MacEntity *e)
     {
@@ -424,8 +576,11 @@ namespace OS
 
       NSString *ns_title = ns_string_from_str8(title);
       [ns_window setTitle:ns_title];
+
       ns_window.delegate = ns_window;
+      [ns_window registerForDraggedTypes:@[NSPasteboardTypeFileURL]];
       [ns_window setAcceptsMouseMovedEvents:YES];
+
       [NSApp activateIgnoringOtherApps:YES];
       result = os_window(ns_window);
 
@@ -448,7 +603,8 @@ namespace OS
     switch(style)
     {
       case CursorStyle::IBeam: ns_cursor = [NSCursor IBeamCursor]; break;
-      case CursorStyle::Select: ns_cursor = [NSCursor arrowCursor]; break;
+      case CursorStyle::Select: ns_cursor = [NSCursor pointingHandCursor]; break;
+      case CursorStyle::Default: ns_cursor = [NSCursor arrowCursor]; break;
       case CursorStyle::UpDownArrow: ns_cursor = [NSCursor resizeUpDownCursor]; break;
       case CursorStyle::LeftRightArrow: ns_cursor = [NSCursor resizeLeftRightCursor]; break;
       case CursorStyle::SouthEastArrow: ns_cursor = [NSCursor openHandCursor]; break;
@@ -607,7 +763,6 @@ namespace OS
 
   void populate_core_render_data(RenderCoreData *rd_data)
   {
-    //- brt: NYI
   }
 
   bool delta_meets_double_click_time(Ticks start, Ticks end)
@@ -674,7 +829,7 @@ namespace OS
   {
     MacBackendData *data = mac_data();
     uint64_t now_ns = clock_gettime_nsec_np(CLOCK_REALTIME);
-    uint64_t delta_ns = data->start_time_ns - now_ns;
+    uint64_t delta_ns = now_ns - data->start_time_ns;
     uint64_t delta_ms = delta_ns / Million(1);
     return static_cast<Ticks>(delta_ms);
   }
@@ -863,6 +1018,23 @@ namespace OS
     Arena::scratch_end(scratch);
   }
 
+  void post_thread_wakeup()
+  {
+    NSEvent *event = [NSEvent otherEventWithType:NSEventTypeApplicationDefined
+                                        location:NSMakePoint(0, 0)
+                                   modifierFlags:0
+                                       timestamp:0
+                                    windowNumber:0
+                                         context:nil
+                                         subtype:0x401
+                                           data1:0
+                                           data2:0];
+    dispatch_async(dispatch_get_main_queue(),
+    ^{
+      [NSApp postEvent:event atStart:NO];
+    });
+  }
+
   ProcessHandle launch_process(const ProcessLaunchParams& in)
   {
     // TODO: This is incomplete.  We need to handle various flags from the input such as inheriting the environment (or not) and injecting new
@@ -960,7 +1132,7 @@ namespace OS
     CGFloat scale = data->wind.screen.backingScaleFactor;
     NSRect rect_pt = data->wind.frame;
     int width = (int)(rect_pt.size.width * scale);
-    int height = (int)(rect_pt.size.width * scale);
+    int height = (int)(rect_pt.size.height * scale);
     return { .width = Width{ width }, .height = Height{ height } };
   }
 
@@ -970,7 +1142,7 @@ namespace OS
     CGFloat scale = data->wind.screen.backingScaleFactor;
     NSRect rect_pt = data->wind.contentView.frame;
     int width = (int)(rect_pt.size.width * scale);
-    int height = (int)(rect_pt.size.width * scale);
+    int height = (int)(rect_pt.size.height * scale);
     return { .width = Width{ width }, .height = Height{ height } };
   }
 
@@ -1018,157 +1190,136 @@ namespace OS
   void query_events(Arena::Arena* arena, Events* lst, Wait wait)
   {
     MacBackendData *data = mac_data();
+    data->events_arena = arena;
+    data->events = lst;
 
-    NSDate *deadline = is_yes(wait) ? [NSDate distantFuture] : [NSDate distantPast];
-    NSEvent *ns_event = [NSApp nextEventMatchingMask:NSEventMaskAny
-                                           untilDate:deadline
-                                              inMode:NSEventTrackingRunLoopMode
-                                            dequeue:YES];
-    for (;ns_event;)
+    if (data->events->count != 0)
     {
-      bool should_send = true;
-#if 0
-      OS_MAC_Window *window = os_mac_window_from_nswindow(ns_event.window);
-      OS_Handle window_handle = os_mac_handle_from_window(window);
-      B32 release = 0;
+      wait = Wait::No;
+    }
 
-      switch (ns_event.type)
+    @autoreleasepool
+    {
+      NSDate *deadline = is_yes(wait) ? [NSDate distantFuture] : [NSDate distantPast];
+      NSEvent *ns_event = [NSApp nextEventMatchingMask:NSEventMaskAny
+                                             untilDate:deadline
+                                                inMode:NSEventTrackingRunLoopMode
+                                               dequeue:YES];
+      for (;ns_event;)
       {
-        //- brt: wakeup event
-        case NSEventTypeApplicationDefined:{}break;
-
-        case NSEventTypeLeftMouseUp:
-        case NSEventTypeRightMouseUp:
+        bool should_send = true;
+        OSMacWindow *window = data->wind;
+        OSWindow window_handle = os_window(window);
+        bool release = false;
+        switch (ns_event.type)
         {
-          release = 1;
-        } // fallthrough
-        case NSEventTypeLeftMouseDown:
-        case NSEventTypeRightMouseDown:
-        {
-          OS_Event *event = os_mac_push_event(release ? OS_EventKind_Release : OS_EventKind_Press, window);
-          event->window = window_handle;
-
-          if (ns_event.type == NSEventTypeLeftMouseDown || ns_event.type == NSEventTypeLeftMouseUp)
+          // brt: wakeup event
+          case NSEventTypeApplicationDefined:
           {
-            event->key = OS_Key_LeftMouseButton;
-          } else if (ns_event.type == NSEventTypeRightMouseDown || ns_event.type == NSEventTypeRightMouseUp)
-          {
-            event->key = OS_Key_RightMouseButton;
-          }
-          NSPoint pos = ns_event.locationInWindow;
-          F32 scale_factor = ns_event.window.screen.backingScaleFactor;
-          event->pos.x = (F32) pos.x*scale_factor;
-          event->pos.y = (F32) (ns_event.window.contentView.frame.size.height - pos.y)*scale_factor;
-        } break;
+            push_event(EventSort::GapThreadWakeup, window_handle);
+          }break;
 
-        case NSEventTypeKeyUp:
-        {
-          release = 1;
-        } // fallthrough
-        case NSEventTypeKeyDown:
-        {
-          should_send = 0;
-          // brt: key down & key up
+          case NSEventTypeLeftMouseUp:
+          case NSEventTypeRightMouseUp:
           {
-            OS_Event *event = os_mac_push_event(release ? OS_EventKind_Release : OS_EventKind_Press, window);
-            event->window = window_handle;
+            release = true;
+          } // fallthrough
+          case NSEventTypeLeftMouseDown:
+          case NSEventTypeRightMouseDown:
+          {
+            Event *event = push_event(release ? EventSort::Release : EventSort::Press, window_handle);
+            if (ns_event.type == NSEventTypeLeftMouseDown || ns_event.type == NSEventTypeLeftMouseUp)
+            {
+              event->key = Key::LeftMouseButton;
+            }
+            else if (ns_event.type == NSEventTypeRightMouseDown || ns_event.type == NSEventTypeRightMouseUp)
+            {
+              event->key = Key::RightMouseButton;
+            }
+            NSPoint pos = ns_event.locationInWindow;
+            float scale_factor = ns_event.window.screen.backingScaleFactor;
+            event->pos.x = (float)(pos.x * scale_factor);
+            event->pos.y = (float)(ns_event.window.contentView.frame.size.height - pos.y) * scale_factor;
+          }break;
+
+          case NSEventTypeKeyUp:
+          {
+            release = true;
+          } // fallthrough
+          case NSEventTypeKeyDown:
+          {
+            should_send = false;
+            Event *event = push_event(release ? EventSort::Release : EventSort::Press, window_handle);
             event->key = os_mac_os_key_from_vkey(ns_event.keyCode);
             event->is_repeat = ns_event.ARepeat != 0;
-            if(event->key == OS_Key_Alt   && event->modifiers & OS_Modifier_Alt)   { event->modifiers &= ~OS_Modifier_Alt; }
-            if(event->key == OS_Key_Ctrl  && event->modifiers & OS_Modifier_Ctrl)  { event->modifiers &= ~OS_Modifier_Ctrl; }
-            if(event->key == OS_Key_Shift && event->modifiers & OS_Modifier_Shift) { event->modifiers &= ~OS_Modifier_Shift; }
-            if(event->key == OS_Key_Super && event->modifiers & OS_Modifier_Super) { event->modifiers &= ~OS_Modifier_Super; }
-          }
-
-          // brt: try text input
-          if (release == 0 && ([ns_event modifierFlags] & (NSEventModifierFlagCommand|NSEventModifierFlagControl)) == 0)
-          {
-            NSString *chars = ns_event.characters;
-            NSUInteger length = chars.length;
-            unichar buffer[32];
-            [chars getCharacters:buffer range:NSMakeRange(0, length)];
-            for (NSUInteger idx = 0; idx < length; idx++)
+            if (event->key == Key::Alt && implies(event->modifiers, KeyMods::Alt))
             {
-              unichar high = buffer[idx];
-              UTF32Char codepoint = 0;
-              // brt: surrogate pair?
-              if (CFStringIsSurrogateHighCharacter(high) &&
-                  idx + 1 < length &&
-                  CFStringIsSurrogateLowCharacter(buffer[idx + 1]))
-              {
-                unichar low = buffer[idx + 1];
-                codepoint = CFStringGetLongCharacterForSurrogatePair(high, low);
-                idx++;
-              }
-              else
-              {
-                codepoint = high;
-              }
-              if (codepoint >= 32 && codepoint < 127)
-              {
-                OS_Event *event = os_mac_push_event(OS_EventKind_Text, window);
-                event->window = window_handle;
-                event->character = codepoint;
-              }
+              event->modifiers = remove_flag(event->modifiers, KeyMods::Alt);
             }
-          }
-        } break;
+            if (event->key == Key::Ctrl && implies(event->modifiers, KeyMods::Ctrl))
+            {
+              event->modifiers = remove_flag(event->modifiers, KeyMods::Ctrl);
+            }
+            if (event->key == Key::Shift && implies(event->modifiers, KeyMods::Shift))
+            {
+              event->modifiers = remove_flag(event->modifiers, KeyMods::Shift);
+            }
+          }break;
 
-        case NSEventTypeLeftMouseDragged:
-        case NSEventTypeRightMouseDragged:
-        {
-          OS_Event *event = os_mac_push_event(OS_EventKind_Press, window);
-          if (ns_event.type == NSEventTypeRightMouseDragged) 
+          case NSEventTypeLeftMouseDragged:
+          case NSEventTypeRightMouseDragged:
           {
-            event->key = OS_Key_LeftMouseButton;
-          } else if (ns_event.type == NSEventTypeRightMouseDragged) 
+            Event *event = push_event(EventSort::Press, window_handle);
+            NSPoint pos = ns_event.locationInWindow;
+            float scale_factor = ns_event.window.screen.backingScaleFactor;
+            event->pos.x = (float)(pos.x * scale_factor);
+            event->pos.y = (float)(ns_event.window.contentView.frame.size.height - pos.y) * scale_factor;
+            if (ns_event.type == NSEventTypeLeftMouseDragged) 
+            {
+              event->key = Key::LeftMouseButton;
+            }
+            else if (ns_event.type == NSEventTypeRightMouseDragged) 
+            {
+              event->key = Key::RightMouseButton;
+            }
+          } // fallthrough
+          case NSEventTypeMouseMoved:
           {
-            event->key = OS_Key_RightMouseButton;
-          }
-        } // fallthrough
-        case NSEventTypeMouseMoved:
-        {
-          OS_Event *event = os_mac_push_event(OS_EventKind_MouseMove, window);
-          NSPoint pos = ns_event.locationInWindow;
-          F32 scale_factor = ns_event.window.screen.backingScaleFactor;
-          event->pos.x = (F32) pos.x*scale_factor;
-          event->pos.y = (F32) (ns_event.window.contentView.frame.size.height - pos.y)*scale_factor;
-        } break;
+            Event *event = push_event(EventSort::MouseMove, window_handle);
+            NSPoint pos = ns_event.locationInWindow;
+            float scale_factor = ns_event.window.screen.backingScaleFactor;
+            event->pos.x = (float)(pos.x * scale_factor);
+            event->pos.y = (float)(ns_event.window.contentView.frame.size.height - pos.y) * scale_factor;
+          }break;
 
-        case NSEventTypeScrollWheel:
-        {
-          OS_Event *event = os_mac_push_event(OS_EventKind_Scroll, window);
-          NSPoint pos = ns_event.locationInWindow;
-          F32 scale_factor = ns_event.window.screen.backingScaleFactor;
-          F32 wheel_x = -ns_event.scrollingDeltaX;
-          F32 wheel_y = -ns_event.scrollingDeltaY;
-          if (!ns_event.hasPreciseScrollingDeltas)
+          case NSEventTypeScrollWheel:
           {
-            wheel_x *= 120.f;
-            wheel_y *= 120.f;
-          }
-          event->pos.x = (F32) pos.x*scale_factor;
-          event->pos.y = (F32) (ns_event.window.contentView.frame.size.height - pos.y)*scale_factor;
-          event->delta = v2f32(wheel_x, wheel_y);
-        } break;
-
-        default:
-        {
-          // brt: debug log this?
-          break;
+            Event *event = push_event(EventSort::Scroll, window_handle);
+            NSPoint pos = ns_event.locationInWindow;
+            float wheel_x = ns_event.scrollingDeltaX;
+            float wheel_y = ns_event.scrollingDeltaY;
+            if (!ns_event.hasPreciseScrollingDeltas)
+            {
+              wheel_x *= 120.f;
+              wheel_y *= 120.f;
+            }
+            float scale_factor = ns_event.window.screen.backingScaleFactor;
+            event->pos.x = (float)(pos.x * scale_factor);
+            event->pos.y = (float)(ns_event.window.contentView.frame.size.height - pos.y) * scale_factor;
+            event->wheel_delta = Vec2f{ wheel_x, wheel_y };
+          }break;
         }
-      }
-#endif
 
-      if (should_send)
-      {
-        [NSApp sendEvent:ns_event];
-      }
+        if (should_send)
+        {
+          [NSApp sendEvent:ns_event];
+        }
 
-      ns_event = [NSApp nextEventMatchingMask:NSEventMaskAny
-                                    untilDate:[NSDate distantPast]
-                                       inMode:NSEventTrackingRunLoopMode
-                                      dequeue:YES];
+        ns_event = [NSApp nextEventMatchingMask:NSEventMaskAny
+          untilDate:[NSDate distantPast]
+          inMode:NSEventTrackingRunLoopMode
+          dequeue:YES];
+      }
     }
   }
 
@@ -1653,6 +1804,159 @@ namespace OS
 } //namespace OS
 
 @implementation OSMacWindow
+
+
+- (void)windowWillClose:(NSNotification *)notification
+{
+  using namespace OS;
+  MacBackendData *data = mac_data();
+  OSMacWindow *window = data->wind;
+  OSWindow window_handle = os_window(window);
+  push_event(EventSort::Quit, window_handle);
+}
+
+- (void)flagsChanged:(NSEvent *)ns_event
+{
+  using namespace OS;
+  MacBackendData *data = mac_data();
+  OSMacWindow *window = data->wind;
+  OSWindow window_handle = os_window(window);
+
+  NSEventModifierFlags new_flags = [ns_event modifierFlags];
+  NSEventModifierFlags old_flags = self.previous_flags;
+  if ((new_flags & NSEventModifierFlagShift) != (old_flags & NSEventModifierFlagShift))
+  {
+    Event *event = push_event(!!(new_flags&NSEventModifierFlagShift) ? EventSort::Press : EventSort::Release, window_handle);
+    event->key = Key::Shift;
+    if (event->key == Key::Alt && implies(event->modifiers, KeyMods::Alt))
+    {
+      event->modifiers = remove_flag(event->modifiers, KeyMods::Alt);
+    }
+    if (event->key == Key::Ctrl && implies(event->modifiers, KeyMods::Ctrl))
+    {
+      event->modifiers = remove_flag(event->modifiers, KeyMods::Ctrl);
+    }
+    if (event->key == Key::Shift && implies(event->modifiers, KeyMods::Shift))
+    {
+      event->modifiers = remove_flag(event->modifiers, KeyMods::Shift);
+    }
+  }
+  if ((new_flags & NSEventModifierFlagControl) != (old_flags & NSEventModifierFlagControl))
+  {
+    Event *event = push_event(!!(new_flags&NSEventModifierFlagControl) ? EventSort::Press : EventSort::Release, window_handle);
+    event->key = Key::Ctrl;
+    if (event->key == Key::Alt && implies(event->modifiers, KeyMods::Alt))
+    {
+      event->modifiers = remove_flag(event->modifiers, KeyMods::Alt);
+    }
+    if (event->key == Key::Ctrl && implies(event->modifiers, KeyMods::Ctrl))
+    {
+      event->modifiers = remove_flag(event->modifiers, KeyMods::Ctrl);
+    }
+    if (event->key == Key::Shift && implies(event->modifiers, KeyMods::Shift))
+    {
+      event->modifiers = remove_flag(event->modifiers, KeyMods::Shift);
+    }
+  }
+  if ((new_flags & NSEventModifierFlagOption) != (old_flags & NSEventModifierFlagOption))
+  {
+    Event *event = push_event(!!(new_flags&NSEventModifierFlagOption) ? EventSort::Press : EventSort::Release, window_handle);
+    event->key = Key::Alt;
+    if (event->key == Key::Alt && implies(event->modifiers, KeyMods::Alt))
+    {
+      event->modifiers = remove_flag(event->modifiers, KeyMods::Alt);
+    }
+    if (event->key == Key::Ctrl && implies(event->modifiers, KeyMods::Ctrl))
+    {
+      event->modifiers = remove_flag(event->modifiers, KeyMods::Ctrl);
+    }
+    if (event->key == Key::Shift && implies(event->modifiers, KeyMods::Shift))
+    {
+      event->modifiers = remove_flag(event->modifiers, KeyMods::Shift);
+    }
+  }
+
+  if ((new_flags & NSEventModifierFlagCommand) != (old_flags & NSEventModifierFlagCommand))
+  {
+    Event *event = push_event(!!(new_flags&NSEventModifierFlagCommand) ? EventSort::Press : EventSort::Release, window_handle);
+    event->key = Key::Command;
+    if (event->key == Key::Alt && implies(event->modifiers, KeyMods::Alt))
+    {
+      event->modifiers = remove_flag(event->modifiers, KeyMods::Alt);
+    }
+    if (event->key == Key::Ctrl && implies(event->modifiers, KeyMods::Ctrl))
+    {
+      event->modifiers = remove_flag(event->modifiers, KeyMods::Ctrl);
+    }
+    if (event->key == Key::Shift && implies(event->modifiers, KeyMods::Shift))
+    {
+      event->modifiers = remove_flag(event->modifiers, KeyMods::Shift);
+    }
+    if (event->key == Key::Command && implies(event->modifiers, KeyMods::Cmd))
+    {
+      event->modifiers = remove_flag(event->modifiers, KeyMods::Cmd);
+    }
+  }
+
+  if ((new_flags & NSEventModifierFlagCapsLock) != (old_flags & NSEventModifierFlagCapsLock))
+  {
+    Event *event = push_event(!!(new_flags&NSEventModifierFlagCapsLock) ? EventSort::Press : EventSort::Release, window_handle);
+    event->key = Key::CapsLock;
+  }
+  self.previous_flags = new_flags;
+  [super flagsChanged:ns_event];
+}
+
+
+- (NSDragOperation) draggingEntered:(id<NSDraggingInfo>) sender
+{
+  NSDragOperation result = NSDragOperationCopy;
+  return result;
+}
+
+- (BOOL) performDragOperation:(id<NSDraggingInfo>) sender
+{
+  using namespace OS;
+  MacBackendData *data = mac_data();
+  OSMacWindow *window = data->wind;
+  OSWindow window_handle = os_window(window);
+
+  NSPasteboard *pboard = [sender draggingPasteboard];
+  NSArray *types = pboard.types;
+  if ([types containsObject:NSPasteboardTypeFileURL])
+  {
+    NSArray *classes = @[NSURL.class];
+    NSDictionary *options = @{NSPasteboardURLReadingFileURLsOnlyKey:@YES};
+    NSArray *file_urls = [pboard readObjectsForClasses:classes
+                                               options:options];
+    NSUInteger count = file_urls.count;
+    if (count > 0)
+    {
+      DropFileList drop_list{};
+
+      Event *event = push_event(EventSort::FileDrop, window_handle);
+      NSPoint pos = sender.draggingLocation;
+      float scale_factor = window.screen.backingScaleFactor;
+      event->pos.x = (float)(pos.x * scale_factor);
+      event->pos.y = (float)(window.contentView.frame.size.height - pos.y) * scale_factor;
+      for EachIndex(idx, count)
+      {
+        NSURL *url = file_urls[idx];
+        char *cstr = (char *)url.path.UTF8String;
+        String8 str8_path = str8_copy(data->events_arena, str8_cstr(cstr));
+        String8Node *node = Arena::push_array_no_zero<String8Node>(data->events_arena, 1);
+        node->string = str8_path;
+        SLLQueuePush(drop_list.first, drop_list.last, node);
+        ++drop_list.count;
+      }
+      data->events->drop_files = drop_list;
+      post_thread_wakeup();
+    }
+  }
+
+  return YES;
+}
+
 @end
 
 int main(int argc, char **argv)

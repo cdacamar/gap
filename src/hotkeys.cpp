@@ -611,6 +611,8 @@ namespace Hotkeys
                 return str8_literal("Middle Mouse");
             case Key::RightMouseButton:
                 return str8_literal("Right Mouse");
+            case Key::Command:
+                return str8_literal("Cmd");
             case Key::Count:
                 return str8_literal("TODO: Count");
             }
@@ -827,6 +829,9 @@ namespace Hotkeys
                         case OS::Key::Shift:
                             mods |= OS::KeyMods::Shift;
                             break;
+                        case OS::Key::Command:
+                            mods |= OS::KeyMods::Cmd;
+                            break;
                         default:
                             good = false;
                             break;
@@ -942,6 +947,9 @@ namespace Hotkeys
                     {
                     case OS::Key::Ctrl:
                         mods |= OS::KeyMods::Ctrl;
+                        break;
+                    case OS::Key::Command:
+                        mods |= OS::KeyMods::Cmd;
                         break;
                     case OS::Key::Alt:
                         mods |= OS::KeyMods::Alt;
@@ -1193,6 +1201,14 @@ mods = [)", str8_mut(hotkey_name(e->cmd)), str8_mut(key_to_human(e->key)));
                 comma = true;
             }
 
+            if (implies(e->mods, OS::KeyMods::Cmd))
+            {
+                str8_serial_push_char(scratch.arena, &serial_lst, '\'');
+                str8_serial_push_str8(scratch.arena, &serial_lst, str8_mut(key_to_human(OS::Key::Command)));
+                str8_serial_push_char(scratch.arena, &serial_lst, '\'');
+                comma = true;
+            }
+
             if (implies(e->mods, OS::KeyMods::Alt))
             {
                 if (comma)
@@ -1255,6 +1271,14 @@ mods = [)", str8_mut(custom_hotkey_group_name(CustomHotkeyGroup(i))), cust_info-
                 {
                     str8_serial_push_char(scratch.arena, &serial_lst, '\'');
                     str8_serial_push_str8(scratch.arena, &serial_lst, str8_mut(key_to_human(OS::Key::Ctrl)));
+                    str8_serial_push_char(scratch.arena, &serial_lst, '\'');
+                    comma = true;
+                }
+
+                if (implies(n->mods, OS::KeyMods::Cmd))
+                {
+                    str8_serial_push_char(scratch.arena, &serial_lst, '\'');
+                    str8_serial_push_str8(scratch.arena, &serial_lst, str8_mut(key_to_human(OS::Key::Command)));
                     str8_serial_push_char(scratch.arena, &serial_lst, '\'');
                     comma = true;
                 }
@@ -1500,6 +1524,19 @@ mods = [)", str8_mut(custom_hotkey_group_name(CustomHotkeyGroup(i))), cust_info-
         if (implies(mods, OS::KeyMods::Ctrl))
         {
             str8_serial_push_str8(scratch.arena, &serial_lst, str8_mut(key_to_human(OS::Key::Ctrl)));
+        }
+
+        if (implies(mods, OS::KeyMods::Cmd))
+        {
+            if (serial_lst.total_size == 0)
+            {
+                str8_serial_push_str8(scratch.arena, &serial_lst, str8_mut(key_to_human(OS::Key::Command)));
+            }
+            else
+            {
+                str8_serial_push_char(scratch.arena, &serial_lst, '+');
+                str8_serial_push_str8(scratch.arena, &serial_lst, str8_mut(key_to_human(OS::Key::Command)));
+            }
         }
 
         if (implies(mods, OS::KeyMods::Shift))
