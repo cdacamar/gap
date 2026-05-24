@@ -36,8 +36,14 @@
 #define SUPPRESS_IF_CONSTEXPR_SUGGEST_WARNING()
 #define ENABLE_IF_CONSTEXPR_SUGGEST_WARNING()
 
+#if !defined(__clang__)
 #define SUPPRESS_MEMSET_NON_TRIVIAL_WARNING() _Pragma("GCC diagnostic push") _Pragma("GCC diagnostic ignored \"-Wclass-memaccess\"")
 #define ENABLE_MEMSET_NON_TRIVIAL_WARNING() _Pragma("GCC diagnostic pop")
+#else
+#define SUPPRESS_MEMSET_NON_TRIVIAL_WARNING()
+#define ENABLE_MEMSET_NON_TRIVIAL_WARNING()
+#endif
+
 #endif // WIN32
 
 #ifdef WIN32

@@ -7,6 +7,7 @@ do
   declare $arg='1'
 done
 
+# --- Unpack Arguments -------------------------------------------------------
 if [ -z "${gcc+x}" ];                     then clang=1; fi
 if [ -z "${release+x}" ];                 then debug=1; fi
 if [ -n "${debug+x}" ];                   then unset release; echo "[debug mode]"; fi
@@ -16,12 +17,17 @@ if [ -n "${clang+x}" ];                   then unset gcc;     compiler="clang"; 
 if [ $# -eq 0 ];                          then gap=1;         echo '[default mode, assuming `gap` build]'; fi
 if [ $# -eq 1 ] && [ -n "${release+x}" ]; then gap=1;         echo '[default mode, assuming `gap` build]'; fi
 
+# --- Unpack XCode Arguments -------------------------------------------------
+if [ "${ENABLE_ADDRESS_SANITIZER:-NO}" == "YES" ]; then asan=1; fi
+
 # --- Unpack Command Line Build Arguments ------------------------------------
+build_assets=0
 metal_renderer=1
 auto_compile_flags=""
-if [ -n "${track_arena+x}" ]; then auto_compile_flags="${auto_compile_flags} -DBUILD_TRACK_ARENA"; echo "[arena tracking enabled]"; fi
+
+if [ -n "${asan+x}" ];           then auto_compile_flags="${auto_compile_flags} -fsanitize=address";     echo "[asan enabled]"; fi
+if [ -n "${track_arena+x}" ];    then auto_compile_flags="${auto_compile_flags} -DBUILD_TRACK_ARENA";    echo "[arena tracking enabled]"; fi
 if [ -n "${metal_renderer+x}" ]; then auto_compile_flags="${auto_compile_flags} -DBUILD_METAL_RENDERER"; echo "[Metal renderer enabled]"; fi
-build_assets=0
 if [ -n "${gap+x}" ] && [ -z "${no_deps+x}" ] && [ -z "${only_compile+x}" ]; then build_assets=1; fi
 
 # --- Compile/Link Line Definitions ------------------------------------------
@@ -41,8 +47,8 @@ cxx_common="-std=c++20 -Wno-switch -Wno-unused-function -Wno-writable-strings -W
 cc_debug="${cc_common} -g -O0 -DBUILD_DEBUG=1"
 cc_release="${cc_common} -g -O2 -DNDEBUG"
 
-#link_common="-lstdc++ -lm -lGL -lX11 -lXext -lXrandr"
 link_common="-lpthread -framework CoreFoundation -framework Cocoa -framework Metal -framework QuartzCore"
+if [ -n "${asan+x}" ]; then link_common="${link_common} -fsanitize=address"; fi
 
 # --- Choose Compile/Link Lines ----------------------------------------------
 if [ -n "${gcc+x}" ];     then compile_debug="${cc_debug}"; fi
@@ -54,7 +60,6 @@ if [ -n "${release+x}" ]; then compile="${compile_release}"; fi
 
 # --- 3rd Party Sources ------------------------------------------------------
 freetype="../external/freetype-2.13.3/freetype-unity.c"
-
 freetype_obj="freetype-unity.o"
 
 # --- No Unity Sources -------------------------------------------------------
@@ -62,7 +67,6 @@ no_unity_src=""
 
 # --- Unity Source -----------------------------------------------------------
 gapsrc="../src/main.cpp"
-
 gapsrc_obj="main.o"
 
 if [ -n "${no_unity+x}" ]; then gapsrc="${no_unity_src}"; compile="${compile} -DNO_UNITY"; fi
@@ -72,7 +76,6 @@ asset_tool="../src/asset-tool.cpp"
 
 # --- Scratch App Source -----------------------------------------------------
 scratch_app="../scratch-app/app.cpp"
-
 scratch_app_obj="app.o"
 
 # --- Prep Directories -------------------------------------------------------

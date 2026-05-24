@@ -208,7 +208,6 @@ namespace Render
   bool os_init_renderer_window(OS::OSWindow wind)
   {
     MetalWindowData *wnd_data = metal_wind_backend_data();
-    MetalRenderData *rend_data = metal_render_backend_data();
     NSWindow *ns_win = reinterpret_cast<NSWindow *>(wind);
     wnd_data->layer = [CAMetalLayer layer];
     wnd_data->layer.autoresizingMask = kCALayerHeightSizable | kCALayerWidthSizable;
@@ -225,8 +224,6 @@ namespace Render
 
   void os_swap_buffers(OS::OSWindow)
   {
-    MetalWindowData *wnd_data = metal_wind_backend_data();
-    MetalRenderData *rend_data = metal_render_backend_data();
   }
 
   FrameRenderer* make_platform_renderer(Arena::Arena* arena)
@@ -468,7 +465,6 @@ namespace Render
     MetalWindowData *wnd_data = metal_wind_backend_data();
     MetalRenderData *rend_data = metal_render_backend_data();
 
-    id<MTLDevice> mtl_device = rend_data->mtl_device;
     id<MTLCommandBuffer> mtl_cmd_buffer = [rend_data->mtl_command_queue commandBuffer];
     wnd_data->cmd_buffer = mtl_cmd_buffer;
     MTLRenderPassDescriptor *mtl_pass_desc = [MTLRenderPassDescriptor renderPassDescriptor];
@@ -522,10 +518,27 @@ namespace Render
 
               //- brt: setup scissor
               MTLScissorRect rect = {0};
-              rect.x = rep(cmd->clip_rect.offset_x);
-              rect.y = rep(cmd->clip_rect.offset_y);
-              rect.width = rep(cmd->clip_rect.width);
-              rect.height = rep(cmd->clip_rect.height);
+              {
+                NSInteger fb_width = rep(rend_data->screen_size.width);
+                NSInteger fb_height = rep(rend_data->screen_size.height);
+                NSInteger w = rep(cmd->clip_rect.width);
+                NSInteger h = rep(cmd->clip_rect.height);
+                NSInteger x = rep(cmd->clip_rect.offset_x);
+                NSInteger y = fb_height - (h + rep(cmd->clip_rect.offset_y));
+                NSInteger x0 = std::max(0l, x);
+                NSInteger y0 = std::max(0l, y);
+                NSInteger x1 = std::min(fb_width, x+w);
+                NSInteger y1 = std::min(fb_height, y+h);
+                if (x1 <= x0 || y1 <= y0)
+                {
+                  // brt: skip fully scissored rect
+                  break;
+                }
+                rect.x = x0;
+                rect.y = y0;
+                rect.width = x1 - x0;
+                rect.height = y1 - y0;
+              }
               [mtl_encoder setScissorRect:rect];
 
               //- brt: setup pipeline
@@ -592,7 +605,6 @@ namespace Render
 
     wnd_data->drawable = [wnd_data->layer nextDrawable];
     id<CAMetalDrawable> mtl_drawable = wnd_data->drawable;
-    id<MTLDevice> mtl_device = rend_data->mtl_device;
     id<MTLCommandBuffer> mtl_cmd_buffer = wnd_data->cmd_buffer;
     MTLRenderPassDescriptor *mtl_pass_desc = [MTLRenderPassDescriptor renderPassDescriptor];
     mtl_pass_desc.colorAttachments[0].texture = mtl_drawable.texture;

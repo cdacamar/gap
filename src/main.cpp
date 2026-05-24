@@ -886,7 +886,7 @@ void update_frame(RenderCoreData* data)
 {
     auto screen = OS::client_size();
     UpdateRenderSizeData update_data{ .new_screen = screen,
-                                        .render_data = data };
+                                      .render_data = data };
     // Note: Handles resizes internally.
     update_render_size(update_data);
     render_core(data);

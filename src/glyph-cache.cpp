@@ -579,7 +579,12 @@ namespace Glyph
             if (not resize_font(face, font->font_size, standard_reporter))
                 return false;
             // Now we cache the resulting render.
-            auto error = FT_Load_Char(face, static_cast<FT_ULong>(glyph), raster_flags[data->text_shader == Render::FragShader::TextSubpixel]);
+            FT_Int32 load_flags = raster_flags[data->text_shader == Render::FragShader::TextSubpixel];
+            if (not Config::system_effects().font_hinting)
+            {
+              load_flags |= FT_LOAD_NO_HINTING;
+            }
+            auto error = FT_Load_Char(face, static_cast<FT_ULong>(glyph), load_flags);
             if (error != 0)
             {
                 const char* log = FT_Error_String(error);
@@ -673,7 +678,12 @@ namespace Glyph
             FT_UInt x = data->next_x;
             FT_UInt y = data->next_y;
             // Now we cache the resulting glyph info.
-            auto error = FT_Load_Char(face, static_cast<FT_ULong>(glyph), raster_flags[data->text_shader == Render::FragShader::TextSubpixel]);
+            FT_Int32 load_flags = raster_flags[data->text_shader == Render::FragShader::TextSubpixel];
+            if (not Config::system_effects().font_hinting)
+            {
+              load_flags |= FT_LOAD_NO_HINTING;
+            }
+            auto error = FT_Load_Char(face, static_cast<FT_ULong>(glyph), load_flags);
             if (error != 0)
             {
                 const char* log = FT_Error_String(error);
@@ -848,7 +858,12 @@ namespace Glyph
             bool result = true;
             for (int i = ValidCharStart; i < CharInfoCount; ++i)
             {
-                auto error = FT_Load_Char(face, i, raster_flags[data->text_shader == Render::FragShader::TextSubpixel]);
+              FT_Int32 load_flags = raster_flags[data->text_shader == Render::FragShader::TextSubpixel];
+              if (not Config::system_effects().font_hinting)
+              {
+                load_flags |= FT_LOAD_NO_HINTING;
+              }
+                auto error = FT_Load_Char(face, i, load_flags);
                 if (error != 0)
                 {
                     const char* log = FT_Error_String(error);
@@ -907,7 +922,12 @@ namespace Glyph
                 // Special glyphs.
                 for (const auto& e : special_glyph_map)
                 {
-                    auto error = FT_Load_Char(special_face, e.glyph, raster_flags[data->text_shader == Render::FragShader::TextSubpixel]);
+                    FT_Int32 load_flags = raster_flags[data->text_shader == Render::FragShader::TextSubpixel];
+                    if (not Config::system_effects().font_hinting)
+                    {
+                      load_flags |= FT_LOAD_NO_HINTING;
+                    }
+                    auto error = FT_Load_Char(special_face, e.glyph, load_flags);
                     if (error != 0)
                     {
                         const char* log = FT_Error_String(error);

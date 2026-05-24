@@ -2,7 +2,9 @@
 #pragma warning(disable: 4244 4267 4459)
 #else
 #pragma GCC diagnostic ignored "-Wunused-function" // ftsdf.c:1365:3: warning: ‘sdf_shape_dump’ defined but not used
+#ifndef __clang__ 
 #pragma GCC diagnostic ignored "-Wdangling-pointer" // ftgrays.c:1886:20: warning: storing the address of local variable ‘buffer’ in ‘*worker.ycells’
+#endif
 #endif
 
 // Config values.

@@ -2924,7 +2924,7 @@ int main(int argc, char** argv)
     }
 
 #ifdef BUILD_TRACK_ARENA
-            Arena::init_tracker_arena();
+    Arena::init_tracker_arena();
 #endif // BUILD_TRACK_ARENA
 
     // Setup thread context.

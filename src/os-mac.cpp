@@ -60,7 +60,6 @@ namespace OS
 
     struct MacEntity;
 
-
     struct IOPipeEndpoint
     {
       int read_pipe;
@@ -399,27 +398,25 @@ namespace OS
         key_table[kVK_F19] = Key::F19;
         key_table[kVK_F20] = Key::F20;
 
-        // --- Punctuation and symbols ---
         key_table[kVK_Space]           = Key::Space;
-        key_table[kVK_ANSI_Grave]      = Key::Tick;          // ` (same as VK_OEM_3)
-        key_table[kVK_ANSI_Minus]      = Key::Minus;         // -
-        key_table[kVK_ANSI_Equal]      = Key::Equal;         // =
-        key_table[kVK_ANSI_LeftBracket]= Key::LeftBracket;   // [
-        key_table[kVK_ANSI_RightBracket]=Key::RightBracket;  // ]
-        key_table[kVK_ANSI_Semicolon]  = Key::Semicolon;     // ;
-        key_table[kVK_ANSI_Quote]      = Key::Quote;         // '
-        key_table[kVK_ANSI_Comma]      = Key::Comma;         // ,
-        key_table[kVK_ANSI_Period]     = Key::Period;        // .
-        key_table[kVK_ANSI_Slash]      = Key::Slash;         // /
-        key_table[kVK_ANSI_Backslash]  = Key::BackSlash;     // \
+        key_table[kVK_ANSI_Grave]      = Key::Tick;
+        key_table[kVK_ANSI_Minus]      = Key::Minus;
+        key_table[kVK_ANSI_Equal]      = Key::Equal;
+        key_table[kVK_ANSI_LeftBracket]= Key::LeftBracket;
+        key_table[kVK_ANSI_RightBracket]=Key::RightBracket;
+        key_table[kVK_ANSI_Semicolon]  = Key::Semicolon;
+        key_table[kVK_ANSI_Quote]      = Key::Quote;
+        key_table[kVK_ANSI_Comma]      = Key::Comma;
+        key_table[kVK_ANSI_Period]     = Key::Period;
+        key_table[kVK_ANSI_Slash]      = Key::Slash;
+        key_table[kVK_ANSI_Backslash]  = Key::BackSlash;
 
-        // --- Control / function keys ---
         key_table[kVK_Tab]             = Key::Tab;
         key_table[kVK_Escape]          = Key::Esc;
         key_table[kVK_Return]          = Key::Return;
-        key_table[kVK_Delete]          = Key::Backspace;     // Backspace (Delete on Mac)
-        key_table[kVK_ForwardDelete]   = Key::Delete;        // Forward delete (fn+Delete)
-        key_table[kVK_Help]            = Key::Insert;        // Insert = Help key on extended keyboard
+        key_table[kVK_Delete]          = Key::Backspace;
+        key_table[kVK_ForwardDelete]   = Key::Delete;
+        key_table[kVK_Help]            = Key::Insert;
 
         key_table[kVK_PageUp]          = Key::PageUp;
         key_table[kVK_PageDown]        = Key::PageDown;
@@ -431,10 +428,9 @@ namespace OS
         key_table[kVK_DownArrow]       = Key::Down;
         key_table[kVK_RightArrow]      = Key::Right;
 
-        // --- Locks and modifiers ---
         key_table[kVK_CapsLock]        = Key::CapsLock;
-        key_table[kVK_Function]        = Key::Menu;          // “Fn” often used as Menu-equivalent
-        key_table[kVK_Command]         = Key::Ctrl;          // ⌘ as Ctrl analog
+        key_table[kVK_Function]        = Key::Menu;
+        key_table[kVK_Command]         = Key::Ctrl;
         key_table[kVK_Control]         = Key::Ctrl;
         key_table[kVK_RightControl]    = Key::Ctrl;
         key_table[kVK_Shift]           = Key::Shift;
@@ -442,7 +438,6 @@ namespace OS
         key_table[kVK_Option]          = Key::Alt;
         key_table[kVK_RightOption]     = Key::Alt;
 
-        // --- Numeric keypad ---
         key_table[kVK_ANSI_KeypadDivide]   = Key::NumSlash;
         key_table[kVK_ANSI_KeypadMultiply] = Key::NumStar;
         key_table[kVK_ANSI_KeypadMinus]    = Key::NumMinus;
@@ -451,7 +446,6 @@ namespace OS
       }
       return key_table[vkey];
     }
-
 
     Mutex os_mutex(MacEntity *e)
     {
@@ -763,6 +757,8 @@ namespace OS
 
   void populate_core_render_data(RenderCoreData *rd_data)
   {
+    MacBackendData *data = mac_data();
+    data->render_data = rd_data;
   }
 
   bool delta_meets_double_click_time(Ticks start, Ticks end)
@@ -1264,6 +1260,39 @@ namespace OS
             {
               event->modifiers = remove_flag(event->modifiers, KeyMods::Shift);
             }
+
+            // brt: try text input
+            if (release == false && ([ns_event modifierFlags] & (NSEventModifierFlagCommand|NSEventModifierFlagControl)) == 0)
+            {
+              NSString *chars = ns_event.characters;
+              NSUInteger length = chars.length;
+              unichar buffer[32];
+              [chars getCharacters:buffer range:NSMakeRange(0, length)];
+              for (NSUInteger idx = 0; idx < length; idx++)
+              {
+                unichar high = buffer[idx];
+                UTF32Char codepoint = 0;
+                // brt: surrogate pair?
+                if (CFStringIsSurrogateHighCharacter(high) &&
+                    idx + 1 < length &&
+                    CFStringIsSurrogateLowCharacter(buffer[idx + 1]))
+                {
+                  unichar low = buffer[idx + 1];
+                  codepoint = CFStringGetLongCharacterForSurrogatePair(high, low);
+                  idx++;
+                }
+                else
+                {
+                  codepoint = high;
+                }
+                if (codepoint >= 32 && codepoint != 127)
+                {
+                  Event *event = push_event(EventSort::Text, window_handle);
+                  event->window = window_handle;
+                  event->character = codepoint;
+                }
+              }
+            }
           }break;
 
           case NSEventTypeLeftMouseDragged:
@@ -1335,40 +1364,60 @@ namespace OS
 
   bool window_minimized(OSWindow wind)
   {
-    //- brt: NYI
-    return false;
+    return [mac_window(wind) isMiniaturized];
   }
 
   bool window_maximized(OSWindow wind)
   {
-    //- brt: NYI
-    return false;
+    return [mac_window(wind) isZoomed];
   }
 
   bool window_fullscreened(OSWindow wind)
   {
-    //- brt: NYI
-    return false;
+    return (([mac_window(wind) styleMask] & NSWindowStyleMaskFullScreen) != 0);
   }
 
   void window_maximize(OSWindow wind)
   {
-    //- brt: NYI
+    OSMacWindow *ns_window = mac_window(wind);
+    BOOL isZoomed = [ns_window isZoomed];
+    if (!isZoomed)
+    {
+      [ns_window zoom:nil];
+    }
   }
 
   void window_fullscreen(OSWindow wind)
   {
-    //- brt: NYI
+    OSMacWindow *ns_window = mac_window(wind);
+    BOOL isCurrentlyFullscreen = (([ns_window styleMask] & NSWindowStyleMaskFullScreen) != 0);
+    if (!isCurrentlyFullscreen)
+    {
+      [ns_window toggleFullScreen:nil];
+    }
   }
 
   void window_restore(OSWindow wind)
   {
-    //- brt: NYI
+    OSMacWindow *ns_window = mac_window(wind);
+    [ns_window deminiaturize:nil];
+    if ([ns_window isZoomed])
+    {
+      [ns_window zoom:nil];
+    }
   }
 
   void window_windowed(OSWindow wind)
   {
-    //- brt: NYI
+    OSMacWindow *ns_window = mac_window(wind);
+    if (([ns_window styleMask] & NSWindowStyleMaskFullScreen) != 0)
+    {
+      [ns_window toggleFullScreen:nil];
+    }
+    ns_window.style = NSWindowStyleMaskTitled |
+                      NSWindowStyleMaskClosable |
+                      NSWindowStyleMaskMiniaturizable |
+                      NSWindowStyleMaskResizable;
   }
 
   Hz monitor_refresh_rate()
@@ -1800,11 +1849,9 @@ namespace OS
     result = str8_copy(arena, os_err_txt);
     return result;
   }
-
 } //namespace OS
 
 @implementation OSMacWindow
-
 
 - (void)windowWillClose:(NSNotification *)notification
 {
@@ -1828,15 +1875,7 @@ namespace OS
   {
     Event *event = push_event(!!(new_flags&NSEventModifierFlagShift) ? EventSort::Press : EventSort::Release, window_handle);
     event->key = Key::Shift;
-    if (event->key == Key::Alt && implies(event->modifiers, KeyMods::Alt))
-    {
-      event->modifiers = remove_flag(event->modifiers, KeyMods::Alt);
-    }
-    if (event->key == Key::Ctrl && implies(event->modifiers, KeyMods::Ctrl))
-    {
-      event->modifiers = remove_flag(event->modifiers, KeyMods::Ctrl);
-    }
-    if (event->key == Key::Shift && implies(event->modifiers, KeyMods::Shift))
+    if (implies(event->modifiers, KeyMods::Shift))
     {
       event->modifiers = remove_flag(event->modifiers, KeyMods::Shift);
     }
@@ -1845,59 +1884,29 @@ namespace OS
   {
     Event *event = push_event(!!(new_flags&NSEventModifierFlagControl) ? EventSort::Press : EventSort::Release, window_handle);
     event->key = Key::Ctrl;
-    if (event->key == Key::Alt && implies(event->modifiers, KeyMods::Alt))
-    {
-      event->modifiers = remove_flag(event->modifiers, KeyMods::Alt);
-    }
-    if (event->key == Key::Ctrl && implies(event->modifiers, KeyMods::Ctrl))
+    if (implies(event->modifiers, KeyMods::Ctrl))
     {
       event->modifiers = remove_flag(event->modifiers, KeyMods::Ctrl);
-    }
-    if (event->key == Key::Shift && implies(event->modifiers, KeyMods::Shift))
-    {
-      event->modifiers = remove_flag(event->modifiers, KeyMods::Shift);
     }
   }
   if ((new_flags & NSEventModifierFlagOption) != (old_flags & NSEventModifierFlagOption))
   {
     Event *event = push_event(!!(new_flags&NSEventModifierFlagOption) ? EventSort::Press : EventSort::Release, window_handle);
     event->key = Key::Alt;
-    if (event->key == Key::Alt && implies(event->modifiers, KeyMods::Alt))
+    if (implies(event->modifiers, KeyMods::Alt))
     {
       event->modifiers = remove_flag(event->modifiers, KeyMods::Alt);
     }
-    if (event->key == Key::Ctrl && implies(event->modifiers, KeyMods::Ctrl))
-    {
-      event->modifiers = remove_flag(event->modifiers, KeyMods::Ctrl);
-    }
-    if (event->key == Key::Shift && implies(event->modifiers, KeyMods::Shift))
-    {
-      event->modifiers = remove_flag(event->modifiers, KeyMods::Shift);
-    }
   }
-
   if ((new_flags & NSEventModifierFlagCommand) != (old_flags & NSEventModifierFlagCommand))
   {
     Event *event = push_event(!!(new_flags&NSEventModifierFlagCommand) ? EventSort::Press : EventSort::Release, window_handle);
     event->key = Key::Command;
-    if (event->key == Key::Alt && implies(event->modifiers, KeyMods::Alt))
-    {
-      event->modifiers = remove_flag(event->modifiers, KeyMods::Alt);
-    }
-    if (event->key == Key::Ctrl && implies(event->modifiers, KeyMods::Ctrl))
-    {
-      event->modifiers = remove_flag(event->modifiers, KeyMods::Ctrl);
-    }
-    if (event->key == Key::Shift && implies(event->modifiers, KeyMods::Shift))
-    {
-      event->modifiers = remove_flag(event->modifiers, KeyMods::Shift);
-    }
-    if (event->key == Key::Command && implies(event->modifiers, KeyMods::Cmd))
+    if (implies(event->modifiers, KeyMods::Cmd))
     {
       event->modifiers = remove_flag(event->modifiers, KeyMods::Cmd);
     }
   }
-
   if ((new_flags & NSEventModifierFlagCapsLock) != (old_flags & NSEventModifierFlagCapsLock))
   {
     Event *event = push_event(!!(new_flags&NSEventModifierFlagCapsLock) ? EventSort::Press : EventSort::Release, window_handle);
@@ -1907,11 +1916,20 @@ namespace OS
   [super flagsChanged:ns_event];
 }
 
-
 - (NSDragOperation) draggingEntered:(id<NSDraggingInfo>) sender
 {
   NSDragOperation result = NSDragOperationCopy;
   return result;
+}
+
+- (void) windowDidResize:(NSWindow *) sender 
+{
+  using namespace OS;
+  MacBackendData *data = mac_data();
+  if (data->render_data != nullptr)
+  {
+    update_frame(data->render_data);
+  }
 }
 
 - (BOOL) performDragOperation:(id<NSDraggingInfo>) sender
@@ -1956,7 +1974,6 @@ namespace OS
 
   return YES;
 }
-
 @end
 
 int main(int argc, char **argv)
@@ -1970,6 +1987,9 @@ int main(int argc, char **argv)
     data->sys_info.allocation_granularity = OS::AllocGranularity{ rep(data->sys_info.page_size) };
   }
 
+#ifdef BUILD_TRACK_ARENA
+  Arena::init_tracker_arena();
+#endif
 
   //- brt: Setup thread context.
   {
@@ -2009,7 +2029,7 @@ int main(int argc, char **argv)
   }
 
 #ifdef BUILD_TRACK_ARENA
-  Arena::init_tracker_arena();
+  Arena::init_tracker_mutex();
 #endif
 
   //- brt: Initialize other macOS data.
