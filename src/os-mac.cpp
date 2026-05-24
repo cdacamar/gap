@@ -1414,10 +1414,10 @@ namespace OS
     {
       [ns_window toggleFullScreen:nil];
     }
-    ns_window.style = NSWindowStyleMaskTitled |
-                      NSWindowStyleMaskClosable |
-                      NSWindowStyleMaskMiniaturizable |
-                      NSWindowStyleMaskResizable;
+    ns_window.styleMask = NSWindowStyleMaskTitled |
+                          NSWindowStyleMaskClosable |
+                          NSWindowStyleMaskMiniaturizable |
+                          NSWindowStyleMaskResizable;
   }
 
   Hz monitor_refresh_rate()
