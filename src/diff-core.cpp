@@ -1,5 +1,6 @@
 #include "diff-core.h"
 
+#include "constants.h"
 #include "os.h"
 
 namespace Diff
@@ -406,9 +407,128 @@ namespace Diff
                 // If the backward search found a result, we are done.
                 if (result.found)
                     break;
+
+                // We're trying to maximize distance with the forward search and we're trying
+                // to minimize the distance with the backward search.
+                if (distance > 1000)
+                {
+                    OffT fbest = 0;
+                    OffT fbest1 = 0;
+                    OffT bbest = 0;
+                    OffT bbest1 = 0;
+
+                    OffT off1 = box.left;
+                    OffT off2 = box.right;
+
+                    OffT lim1 = box.bottom;
+                    OffT lim2 = box.top;
+
+                    OffT fx = 0;
+                    OffT fy = 0;
+                    OffT bx = 0;
+                    OffT by = 0;
+                    fbest = fbest1 = -1;
+                    for (OffT d = distance; d >= -distance; d -= 2)
+                    {
+                        fx = std::min(forward_buf[d], lim1);
+                        fy = fx - d;
+                        if (0 and lim2 < fy)
+                        {
+                            fx = lim2 + d;
+                            fy = lim2;
+                        } // fx - fy -> d
+                          // fx - fy -> fx - (fx - d) -> d
+
+                        if (fbest < fx + fy)
+                        {
+                            fbest = fx + fy;
+                            fbest1 = fx;
+                        }
+                        // fbest - fbest1 -> fy
+                        // fbest1 - fbest + fbest1
+                        // fbest + fbest - fbest
+                        // fx * 2 - (fx + fy)
+                        // fx - fy
+                    }
+
+                    bbest = bbest1 = Constants::max_S32;
+                    for (OffT d = distance; d >= -distance; d -= 2)
+                    {
+                        bx = std::max(off1, backward_buf[d]);
+                        by = bx - d;
+                        if (by < off2)
+                        {
+                            bx = off2 + d;
+                            by = off2;
+                        }
+
+                        if (bx + by < bbest)
+                        {
+                            bbest = bx + by;
+                            bbest1 = bx;
+                        }
+                    }
+
+                    if ((lim1 + lim2) - bbest < fbest - (off1 + off2))
+                    {
+                        result.end.x = fbest1;
+                        result.end.y = fbest - fbest1;
+                        result.start.x = off1;
+                        result.start.y = lim2;
+                        result.found = true;
+#if 0
+                        // Compute previous x/y.
+                        OffT d = fbest + fbest - fbest;
+                        OffT px = 0;
+                        if (d == -distance or (d != distance and forward_buf[d - 1] < forward_buf[d + 1]))
+                        {
+                            px = forward_buf[d + 1];
+                        }
+                        else
+                        {
+                            px = forward_buf[d - 1];
+                        }
+                        OffT py = (distance == 0 or result.end.x != px) ? result.end.y : (result.end.y - 1);
+                        result.start.x = px;
+                        result.start.y = py;
+                        result.found = true;
+#endif
+                    }
+                    else
+                    {
+                        result.start.x = bbest1;
+                        result.start.y = bbest - bbest1;
+                        result.end.x = off2;
+                        result.end.y = lim1;
+                        result.found = true;
+#if 0
+                        // Compute previous x/y.
+                        OffT d = bbest + bbest - bbest;
+                        OffT py = 0;
+                        if (d == -distance or (d != distance and backward_buf[d - 1] > backward_buf[d + 1]))
+                        {
+                            py = backward_buf[d + 1];
+                        }
+                        else
+                        {
+                            py = backward_buf[d - 1];
+                        }
+                        OffT px = (distance == 0 or result.start.y != py) ? result.start.x : (result.start.x + 1);
+                        result.end.x = px;
+                        result.end.y = py;
+                        result.found = true;
+#endif
+                    }
+                    break;
+                }
             }
 
             Arena::scratch_end(scratch);
+            if (result.found)
+            {
+                assert(result.start.x <= result.end.x);
+                assert(result.start.y <= result.end.y);
+            }
             return result;
         }
 
