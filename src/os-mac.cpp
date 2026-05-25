@@ -1447,15 +1447,16 @@ namespace OS
     int got_final_result = 0;
     char *buffer = 0;
     uint32_t size = 0;
+    Arena::Position path_base_pos = Arena::pos(scratch.arena);
     for(size_t cap = internal_max_path, r = 0; r < 4; cap *= 2, r += 1)
     {
-      Arena::scratch_end(scratch);
       buffer = Arena::push_array<char>(scratch.arena, cap);
       if (_NSGetExecutablePath(buffer, &size) == 0)
       {
         got_final_result = 1;
         break;
       }
+      Arena::pop_to(scratch.arena, path_base_pos);
     }
 
     if(got_final_result && size > 0)
