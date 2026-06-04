@@ -778,6 +778,15 @@ void render_core(RenderCoreData* data)
         {
             notify_config_update(NotifyConfigExplorer::Yes, data);
         }
+        if (resp.switch_diff)
+        {
+          if (Diff::diff_dir_panel_nav_diff(data->diff_dir_panel, resp.order, data->feed))
+          {
+              uint64_t idx = Diff::diff_dir_panel_selected_diff(data->diff_dir_panel);
+              Diff::DiffDirDiffResults results = Diff::diff_dir_panel_cached_diffs(data->diff_dir_panel, idx);
+              Diff::diff_panel_sink_cached_diffs(data->diff_panel, results);
+          }
+        }
     }
 
     // Special overlay for hotkey binding.

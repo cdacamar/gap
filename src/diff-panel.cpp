@@ -75,6 +75,8 @@ namespace Diff
             LowerCtxWindow,
             CtxWindow,
             ExpandCtxWindow,
+            PrevFile,
+            NextFile,
             Count
         };
     } // namespace [anon]
@@ -1084,6 +1086,8 @@ namespace Diff
                     UI::Widgets::make_id_seed(panel->id, "ctx-wnd-dwn"),
                     UI::Widgets::make_id_seed(panel->id, "ctx-wnd-val"),
                     UI::Widgets::make_id_seed(panel->id, "ctx-wnd-up"),
+                    UI::Widgets::make_id_seed(panel->id, "prev-file"),
+                    UI::Widgets::make_id_seed(panel->id, "next-file"),
                 };
 
                 constexpr String8View btn_tips[] =
@@ -1093,6 +1097,8 @@ namespace Diff
                     str8_literal("Lower context window"),
                     str8_literal("Context window"),
                     str8_literal("Expand context window"),
+                    str8_literal("Open previous diff"),
+                    str8_literal("Open next diff"),
                 };
 
                 UI::Widgets::BuildIconicButtonInput btns[] =
@@ -1124,6 +1130,18 @@ namespace Diff
                     {
                         .id = btn_ids[rep(PanelButtons::ExpandCtxWindow)],
                         .icon = Glyph::SpecialGlyph::Plus,
+                        .padding = { PartitionPanel::padding },
+                        .thickness = PartitionPanel::padding,
+                    },
+                    {
+                        .id = btn_ids[rep(PanelButtons::PrevFile)],
+                        .icon = Glyph::SpecialGlyph::ArrowUp,
+                        .padding = { PartitionPanel::padding },
+                        .thickness = PartitionPanel::padding,
+                    },
+                    {
+                        .id = btn_ids[rep(PanelButtons::NextFile)],
+                        .icon = Glyph::SpecialGlyph::ArrowDown,
                         .padding = { PartitionPanel::padding },
                         .thickness = PartitionPanel::padding,
                     },
@@ -1275,6 +1293,14 @@ namespace Diff
                                 cfg.context_window += 1;
                                 Config::update(cfg);
                                 resp.updated_cfg = true;
+                            }
+                            break;
+                        case PanelButtons::PrevFile:
+                        case PanelButtons::NextFile:
+                            {
+                                resp.switch_diff = true;
+                                resp.order = PanelButtons(i) == PanelButtons::NextFile ? Diff::NextDiffOrder::Next : Diff::NextDiffOrder::Previous;
+                                
                             }
                             break;
                         }

@@ -25,6 +25,8 @@ namespace Diff
     struct DiffPanelResponse
     {
         bool updated_cfg;
+        bool switch_diff;
+        Diff::NextDiffOrder order;
     };
 
     struct DiffPanel;
