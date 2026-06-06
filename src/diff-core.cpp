@@ -412,6 +412,7 @@ namespace Diff
                 // to minimize the distance with the backward search.
                 if (distance > 1000)
                 {
+#if 0
                     OffT fbest = 0;
                     OffT fbest1 = 0;
                     OffT bbest = 0;
@@ -422,7 +423,79 @@ namespace Diff
 
                     OffT lim1 = box.bottom;
                     OffT lim2 = box.top;
+#endif
 
+                    SnakePoint fwd[2] = { { -1, -1 },
+                                          { -1, -1 } };
+                    SnakePoint bwd[2] = { { Constants::max_S32, Constants::max_S32 },
+                                          { Constants::max_S32, Constants::max_S32 } };
+                    for (OffT d = distance; d >= -distance; d -= 2)
+                    {
+                        // Forward.
+                        OffT x = forward_buf[d];
+                        OffT y = box.top + (x - box.left) - d;
+                        OffT prev_x = forward_buf[d - 1];
+#if 1
+                        if (x < prev_x)
+                        {
+                            prev_x = forward_buf[d + 1];
+                        }
+#endif
+                        OffT prev_y = box.top + (prev_x - box.left) - d;
+                        if (fwd[1].x < x)
+                        {
+                            fwd[0].x = prev_y;
+                            fwd[0].y = prev_x;
+                            fwd[1].x = y;
+                            fwd[1].y = x;
+                        }
+
+                        // Backward.
+                        OffT k = d + delta;
+                        y = backward_buf[d];
+                        x = box.left + (y - box.top) + k;
+                        prev_y = backward_buf[d - 1];
+#if 1
+                        if (y > prev_y)
+                        {
+                            prev_y = backward_buf[d + 1];
+                        }
+#endif
+                        prev_x = box.left + (prev_y - box.top) + k;
+                        if (k >= -distance and k <= distance and bwd[0].y > y)
+                        {
+                            bwd[0].x = x;
+                            bwd[0].y = y;
+                            bwd[1].x = prev_x;
+                            bwd[1].y = prev_y;
+                        }
+                    }
+                    // Pick the best.
+                    OffT d1 = fwd[1].x - box.left;
+                    OffT d2 = box.bottom - bwd[0].y;
+                    //if (fwd[1].y > bwd[0].y)
+                    if (d1 > d2)
+                    {
+                        result.start.x = fwd[0].x;
+                        result.start.y = fwd[0].y;
+                        result.end.x = fwd[1].x;
+                        result.end.y = fwd[1].y;
+                    }
+                    else
+                    {
+                        result.start.x = bwd[0].x;
+                        result.start.y = bwd[0].y;
+                        result.end.x = bwd[1].x;
+                        result.end.y = bwd[1].y;
+                    }
+                    result.found = true;
+                    assert(result.start.x >= 0);
+                    assert(result.start.y >= 0);
+                    assert(result.end.x >= 0);
+                    assert(result.end.y >= 0);
+                    break;
+#if 0
+#if 0
                     OffT fx = 0;
                     OffT fy = 0;
                     OffT bx = 0;
@@ -468,6 +541,7 @@ namespace Diff
                             bbest1 = bx;
                         }
                     }
+#endif
 
                     if ((lim1 + lim2) - bbest < fbest - (off1 + off2))
                     {
@@ -520,6 +594,7 @@ namespace Diff
 #endif
                     }
                     break;
+#endif
                 }
             }
 
