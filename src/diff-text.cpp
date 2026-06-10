@@ -573,7 +573,10 @@ namespace Diff
             // Note: the scrollbox starts at offset 0, but CursorLine is 1-indexed.
             CursorLine first = CursorLine(off.idx + 1);
             CursorLine last = CursorLine{ rep(first) + (off.offset.y > 0.f) + lines_per_v };
-            last = std::clamp(last, first, CursorLine{ widget->text.line_starts.size });
+
+            // line_count needs to be at leas 1 because glibc's std::clamp does asserts(!(hi < lo))
+            uint64_t line_count = widget->text.line_starts.size;
+            last = std::clamp(last, first, CursorLine{ line_count == 0 ? 1 : line_count });
 
             CmdBuffer::start_glyph_run(lst, Render::VertShader::OneOneTransform);
             for (; first <= last; first = extend(first))
