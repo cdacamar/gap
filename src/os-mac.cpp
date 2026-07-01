@@ -1325,16 +1325,16 @@ namespace OS
           {
             Event *event = push_event(EventSort::Scroll, window_handle);
             NSPoint pos = ns_event.locationInWindow;
-            float wheel_x = ns_event.scrollingDeltaX;
+            float wheel_x = -ns_event.scrollingDeltaX;
             float wheel_y = ns_event.scrollingDeltaY;
-            if (!ns_event.hasPreciseScrollingDeltas)
+            // Cribbed from sokol_app.h.
+            if (ns_event.hasPreciseScrollingDeltas)
             {
-              wheel_x *= 120.f;
-              wheel_y *= 120.f;
+              wheel_x *= .1f;
+              wheel_y *= .1f;
             }
-            float scale_factor = ns_event.window.screen.backingScaleFactor;
-            event->pos.x = (float)(pos.x * scale_factor);
-            event->pos.y = (float)(ns_event.window.contentView.frame.size.height - pos.y) * scale_factor;
+            event->pos.x = (float)(pos.x);
+            event->pos.y = (float)(ns_event.window.contentView.frame.size.height - pos.y);
             event->wheel_delta = Vec2f{ wheel_x, wheel_y };
           }break;
         }
