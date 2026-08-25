@@ -435,13 +435,15 @@ namespace Diff
                         OffT x = forward_buf[d];
                         OffT y = box.top + (x - box.left) - d;
                         OffT prev_x = forward_buf[d - 1];
+                        OffT prev_y = box.top + (prev_x - box.left) - (d - 1);
 #if 1
                         if (x < prev_x)
                         {
                             prev_x = forward_buf[d + 1];
+                            prev_y = box.top + (prev_x - box.left) - (d + 1);
                         }
 #endif
-                        OffT prev_y = box.top + (prev_x - box.left) - d;
+                        //OffT prev_y = box.top + (prev_x - box.left) - d;
                         if (fwd[1].x < x)
                         {
                             fwd[0].x = prev_y;
@@ -455,13 +457,15 @@ namespace Diff
                         y = backward_buf[d];
                         x = box.left + (y - box.top) + k;
                         prev_y = backward_buf[d - 1];
+                        prev_x = box.left + (prev_y - box.top) + (d - 1 + delta);
 #if 1
                         if (y > prev_y)
                         {
                             prev_y = backward_buf[d + 1];
+                            prev_x = box.left + (prev_y - box.top) + (d + 1 + delta);
                         }
 #endif
-                        prev_x = box.left + (prev_y - box.top) + k;
+                        //prev_x = box.left + (prev_y - box.top) + k;
                         if (k >= -distance and k <= distance and bwd[0].y > y)
                         {
                             bwd[0].x = x;
