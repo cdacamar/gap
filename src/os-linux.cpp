@@ -1125,6 +1125,8 @@ namespace OS
         wnd_attrs.border_pixel      = 0;
         wnd_attrs.event_mask        = StructureNotifyMask;
 
+        const bool have_saved_pos = wind_rect.x != default_window_pos.x
+                                    and wind_rect.y != default_window_pos.y;
         wind_rect.x = wind_rect.x == default_window_pos.x ? 0 : wind_rect.x;
         wind_rect.y = wind_rect.y == default_window_pos.y ? 0 : wind_rect.y;
 
@@ -1192,6 +1194,27 @@ namespace OS
         // Done with the temp visual data.
         XFree(vi);
         XStoreName(display, wind, title.str);
+
+        // Size hints have to be in place before the map request: the WM reads them
+        // when it takes the window over.  StaticGravity says our x/y describe the
+        // client area rather than the outside of the WM's frame, which is what
+        // window_rect() hands back, so a saved position restores where it was.
+        {
+            XSizeHints* size_hints = XAllocSizeHints();
+            size_hints->flags      = PSize | PWinGravity;
+            size_hints->width      = wind_rect.z;
+            size_hints->height     = wind_rect.a;
+            size_hints->win_gravity = StaticGravity;
+            if (have_saved_pos)
+            {
+                size_hints->flags |= USPosition;
+                size_hints->x      = wind_rect.x;
+                size_hints->y      = wind_rect.y;
+            }
+            XSetWMNormalHints(display, wind, size_hints);
+            XFree(size_hints);
+        }
+
         XMapWindow(display, wind);
 
         // More input processing.
@@ -1311,7 +1334,13 @@ namespace OS
         data->min_window_size = min_size;
 
         XSizeHints* size_hints = XAllocSizeHints();
-        size_hints->flags = PMinSize;
+
+        long supplied = 0;
+        if (not XGetWMNormalHints(data->display, data->wind, size_hints, &supplied))
+        {
+            size_hints->flags = 0;
+        }
+        size_hints->flags |= PMinSize;
         size_hints->min_width = rep(min_size.width);
         size_hints->min_height = rep(min_size.height);
         XSetWMNormalHints(data->display, data->wind, size_hints);
@@ -1410,7 +1439,16 @@ namespace OS
         LinuxBackendData* data = linux_data();
         XWindowAttributes attrs = {};
         XGetWindowAttributes(data->display, data->wind, &attrs);
-        return { attrs.x, attrs.y, attrs.width, attrs.height };
+
+        // The WM will reparent us onto its frame, which changes the attrs.
+        // attrs.x and attrs.y are now relative to frame, not the root. In essence
+        // they are a border offset and not a screen position.
+        int root_x = attrs.x;
+        int root_y = attrs.y;
+        Window ignored_child = 0;
+        XTranslateCoordinates(data->display, data->wind, attrs.root,
+                              0, 0, &root_x, &root_y, &ignored_child);
+        return { root_x, root_y, attrs.width, attrs.height };
     }
 
     void swap_buffers(OSWindow wind)
