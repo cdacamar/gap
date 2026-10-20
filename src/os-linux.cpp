@@ -184,6 +184,8 @@ namespace OS
             XID              counter_xid;
             XIM              xim;
             XIC              xic;
+            bool             is_xwayland = false;
+            int              x11_fd;
             Atom             window_protocols_atom;
             Atom             delete_window_atom;
             Atom             sync_request_atom;
@@ -1155,26 +1157,53 @@ namespace OS
                     | KeyReleaseMask
                     | FocusChangeMask
                     | StructureNotifyMask);
-        // Protocols.
-        Atom protocols[] =
+
+        data->is_xwayland = (getenv("WAYLAND_DISPLAY") != nullptr);
+        if (!data->is_xwayland)
         {
-            data->delete_window_atom,
-            data->sync_request_atom
-        };
-        XSetWMProtocols(display, wind, protocols, std::size(protocols));
+            const char* vendor = XServerVendor(display);
+            if (vendor && strstr(vendor, "XWayland"))
+            {
+                data->is_xwayland = true;
+            }
+        }
+
+        // Always add X11 fd to epoll so we wake up for resize events
+        data->x11_fd = ConnectionNumber(data->display);
+        epoll_event x11_ev{ };
+        x11_ev.events = EPOLLIN;
+        x11_ev.data.fd = data->x11_fd;
+        epoll_ctl(data->epoll, EPOLL_CTL_ADD, data->x11_fd, &x11_ev);
+
+        // Only use _NET_WM_SYNC_REQUEST on native X11. It deadlocks on XWayland.
+        if (!data->is_xwayland)
         {
             XSyncValue initial{};
             XSyncIntToValue(&initial, 0);
             data->counter_xid = XSyncCreateCounter(display, initial);
+
+            data->sync_request_atom = XInternAtom(display, "_NET_WM_SYNC_REQUEST", False);
+            data->sync_request_counter_atom = XInternAtom(display, "_NET_WM_SYNC_REQUEST_COUNTER", False);
+
+            Atom protocols[] = { data->delete_window_atom, data->sync_request_atom };
+            XSetWMProtocols(display, wind, protocols, 2);
+            XChangeProperty(display,
+                            wind,
+                            data->sync_request_counter_atom,
+                            XA_CARDINAL,
+                            32,
+                            PropModeReplace,
+                            (unsigned char*)&data->counter_xid,
+                            1);
         }
-        XChangeProperty(display,
-                        wind,
-                        data->sync_request_counter_atom,
-                        XA_CARDINAL,
-                        32,
-                        PropModeReplace,
-                        reinterpret_cast<unsigned char*>(&data->counter_xid),
-                        1);
+        else
+        {
+            data->sync_request_atom = 0;
+            data->sync_request_counter_atom = 0;
+            data->counter_xid = 0;
+            Atom protocols[] = { data->delete_window_atom };
+            XSetWMProtocols(display, wind, protocols, 1);
+        }
 
         // To enable drag-and-drop.
         {
@@ -1192,6 +1221,10 @@ namespace OS
         // Done with the temp visual data.
         XFree(vi);
         XStoreName(display, wind, title.str);
+        XClassHint class_hint;
+        class_hint.res_name  = const_cast<char*>("gap");
+        class_hint.res_class = const_cast<char*>("Gap");
+        XSetClassHint(display, wind, &class_hint);
         XMapWindow(display, wind);
 
         // More input processing.
@@ -1418,6 +1451,16 @@ namespace OS
         LinuxBackendData* data = linux_data();
         glXSwapBuffers(data->display, data->wind);
 
+        // Flush sync counter acknowledgement on native X11
+        if (!data->is_xwayland && data->counter != 0)
+        {
+            XSyncValue value{};
+            XSyncIntToValue(&value, data->counter);
+            XSyncSetCounter(data->display, data->counter_xid, value);
+            XFlush(data->display);
+            data->counter = 0;
+        }
+
         // Now we setup the frame timer based on the current Hz
         // and wait to flip the next buffer.  This is because we
         // cannot reliably get the OpenGL extension which controls
@@ -1462,6 +1505,10 @@ namespace OS
                 {
                     ret = read(data->step_timer_fd, &count, sizeof count);
                 } while(ret != -1 or errno != EAGAIN);
+            }
+            else if (event.data.fd == data->x11_fd)
+            {
+                return;
             }
         }
     }
@@ -1742,14 +1789,11 @@ namespace OS
                             push_event(arena, lst, EventSort::Quit, wnd);
                         }
                     }
-                    else if (evt.xclient.message_type == data->sync_request_atom)
+                    else if (evt.xclient.message_type == data->sync_request_atom && data->sync_request_atom != 0)
                     {
                         data->counter = 0;
-                        data->counter |= evt.xclient.data.l[2];
-                        data->counter |= (evt.xclient.data.l[3] << 32);
-                        XSyncValue value{};
-                        XSyncIntToValue(&value, data->counter);
-                        XSyncSetCounter(data->display, data->counter_xid, value);
+                        data->counter |= static_cast<uint64_t>(evt.xclient.data.l[2]);
+                        data->counter |= (static_cast<uint64_t>(evt.xclient.data.l[3]) << 32);
                     }
                     else if (evt.xclient.message_type == data->thread_wakeup_atom)
                     {
