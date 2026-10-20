@@ -160,6 +160,37 @@ namespace Diff
         {
             return window.idx_buf[circular_window_mask(idx, window.cap)];
         }
+
+        bool is_change(const DiffTextView* widget, int64_t idx)
+        {
+            const EditType type = widget->diffs.lines[idx].type;
+            return type != EditType::Eq and type != EditType::Skip;
+        }
+
+        // Head of the change region after 'from', or 'from' if there isn't one.
+        int64_t next_change_idx(const DiffTextView* widget, int64_t from)
+        {
+            const int64_t size = static_cast<int64_t>(widget->diffs.size);
+            int64_t idx = from;
+            // Step out of the region we're in, then on to the head of the next one.
+            while (idx < size and is_change(widget, idx)) ++idx;
+            while (idx < size and not is_change(widget, idx)) ++idx;
+            // Nothing below us; stay put rather than running off to the end of the file.
+            return idx < size ? idx : from;
+        }
+
+        // Head of the change region before 'from', or 'from' if there isn't one.
+        int64_t prev_change_idx(const DiffTextView* widget, int64_t from)
+        {
+            // 'from' indexes the scroll view, which outruns 'diffs' when there is no diff to show.
+            int64_t idx = std::min(from, static_cast<int64_t>(widget->diffs.size)) - 1;
+            // Step back to the region above us, then on to its head.
+            while (idx >= 0 and not is_change(widget, idx)) --idx;
+            // Nothing above us; stay put rather than running off to the start of the file.
+            if (idx < 0) return from;
+            while (idx >= 0 and is_change(widget, idx)) --idx;
+            return idx + 1;
+        }
     } // namespace [anon]
 
     // Creation.
@@ -531,6 +562,24 @@ namespace Diff
             {
                 UI::Widgets::IndexedScrollOffset off = {};
                 off.idx = scroll_size.v_size - 1;
+                widget->scroll->scroll_to(off);
+                resp.scroll_changed = true;
+            }
+
+            if (hotkey(*state, Hotkey::GLB_TextNextChange))
+            {
+                UI::Widgets::IndexedScrollOffset off = widget->scroll->position();
+                off.offset.y = 0.f;
+                off.idx = std::min(next_change_idx(widget, off.idx), scroll_size.v_size - 1);
+                widget->scroll->scroll_to(off);
+                resp.scroll_changed = true;
+            }
+
+            if (hotkey(*state, Hotkey::GLB_TextPrevChange))
+            {
+                UI::Widgets::IndexedScrollOffset off = widget->scroll->position();
+                off.offset.y = 0.f;
+                off.idx = std::max(prev_change_idx(widget, off.idx), int64_t(0));
                 widget->scroll->scroll_to(off);
                 resp.scroll_changed = true;
             }
